@@ -1,0 +1,779 @@
+{
+  "schemaVersion": 1,
+  "project": "scooter-shooter",
+  "sourceOfTruth": "docs/GDD.md",
+  "statusValues": ["pending", "in_progress", "done", "blocked"],
+  "statusPolicy": {
+    "pending": "Not started or waiting for dependencies.",
+    "in_progress": "Actively being implemented. At most one implementation task should normally have this status.",
+    "done": "Acceptance criteria were verified and evidence is recorded.",
+    "blocked": "Cannot proceed without an external prerequisite; blockedReason must be present."
+  },
+  "updatedAt": "2026-09-19T22:24:00+02:00",
+  "tasks": [
+    {
+      "id": "planning-001",
+      "milestone": "planning",
+      "title": "Define the product and technical architecture",
+      "status": "done",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "The mobile gameplay, multiplayer authority, hosting, delivery, cost, security, testing, and rollout decisions are documented.",
+        "The document records the selected technology and deferred features."
+      ],
+      "evidence": ["docs/GDD.md"]
+    },
+    {
+      "id": "m0-001",
+      "milestone": "foundation",
+      "title": "Create the TypeScript monorepo workspace",
+      "status": "done",
+      "dependsOn": ["planning-001"],
+      "acceptanceCriteria": [
+        "npm workspaces include client, server, protocol, game-config, and simulation packages.",
+        "A locked dependency install succeeds.",
+        "Root scripts expose build, typecheck, lint, format check, and test commands."
+      ],
+      "evidence": [
+        "package.json",
+        "package-lock.json",
+        "apps/client/package.json",
+        "apps/server/package.json",
+        "packages/protocol/package.json",
+        "packages/game-config/package.json",
+        "packages/simulation/package.json",
+        "npm run validate (2026-09-19)"
+      ]
+    },
+    {
+      "id": "m0-002",
+      "milestone": "foundation",
+      "title": "Define shared linting, formatting, and TypeScript configuration",
+      "status": "done",
+      "dependsOn": ["m0-001"],
+      "acceptanceCriteria": [
+        "All workspaces use strict TypeScript.",
+        "ESLint and Prettier run from the repository root.",
+        "Generated build output is ignored."
+      ],
+      "evidence": [
+        "tsconfig.base.json",
+        "eslint.config.js",
+        ".prettierrc.json",
+        ".gitignore",
+        "npm run validate (2026-09-19)"
+      ]
+    },
+    {
+      "id": "m0-003",
+      "milestone": "foundation",
+      "title": "Implement the versioned realtime protocol package",
+      "status": "done",
+      "dependsOn": ["m0-001"],
+      "acceptanceCriteria": [
+        "Client-to-server and server-to-client message schemas are runtime validated.",
+        "The handshake carries a protocol version.",
+        "Valid and invalid message tests pass."
+      ],
+      "evidence": [
+        "packages/protocol/src/index.ts",
+        "packages/protocol/src/index.test.ts",
+        "npm test --workspace @scooter-shooter/protocol (6 tests, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m0-004",
+      "milestone": "foundation",
+      "title": "Implement versioned game configuration",
+      "status": "done",
+      "dependsOn": ["m0-001"],
+      "acceptanceCriteria": [
+        "Match, movement, health, pistol, and network tuning values are typed and versioned.",
+        "Invalid configuration is rejected by tests."
+      ],
+      "evidence": [
+        "packages/game-config/src/index.ts",
+        "packages/game-config/src/index.test.ts",
+        "npm test --workspace @scooter-shooter/game-config (4 tests, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m0-005",
+      "milestone": "foundation",
+      "title": "Create the Babylon.js PWA shell",
+      "status": "done",
+      "dependsOn": ["m0-002", "m0-004"],
+      "acceptanceCriteria": [
+        "The client renders a Babylon.js scene.",
+        "The production build uses the GitHub Pages repository base path.",
+        "The web manifest and service worker make the shell installable.",
+        "Unsupported WebGL clients see an explicit compatibility message."
+      ],
+      "evidence": [
+        "apps/client/src/main.ts",
+        "apps/client/vite.config.ts",
+        "apps/client/public/game-icon.svg",
+        "apps/client/dist/manifest.webmanifest",
+        "npm run build --workspace @scooter-shooter/client (2026-09-19)",
+        "Production preview returned HTTP 200 (2026-09-19)"
+      ]
+    },
+    {
+      "id": "m0-006",
+      "milestone": "foundation",
+      "title": "Create the Cloud Run server shell",
+      "status": "done",
+      "dependsOn": ["m0-002", "m0-003", "m0-004"],
+      "acceptanceCriteria": [
+        "The server exposes health, readiness, and version endpoints.",
+        "The server shuts down gracefully.",
+        "A production container builds and runs as a non-root user."
+      ],
+      "evidence": [
+        "apps/server/src/server.ts",
+        "apps/server/src/server.test.ts",
+        "apps/server/Dockerfile",
+        "npm test --workspace @scooter-shooter/server (4 tests, 2026-09-19)",
+        "Docker image ran as user node and returned healthy endpoints (2026-09-19)"
+      ]
+    },
+    {
+      "id": "m0-007",
+      "milestone": "foundation",
+      "title": "Add repository continuous integration",
+      "status": "done",
+      "dependsOn": ["m0-002", "m0-005", "m0-006"],
+      "acceptanceCriteria": [
+        "Pull requests run install, format, lint, typecheck, unit tests, production builds, container build, and browser smoke tests.",
+        "Workflow permissions default to read-only.",
+        "Build artifacts are retained for inspection."
+      ],
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "tests/smoke/pages.spec.ts",
+        "scripts/serve-pages-preview.mjs",
+        "npm run validate (2026-09-19)",
+        "npm run test:smoke (mobile Chromium, 2026-09-19)",
+        "docker build --file apps/server/Dockerfile . (2026-09-19)"
+      ]
+    },
+    {
+      "id": "m0-008",
+      "milestone": "foundation",
+      "title": "Add GitHub Pages deployment",
+      "status": "blocked",
+      "dependsOn": ["m0-005", "m0-007"],
+      "acceptanceCriteria": [
+        "A successful main-branch workflow deploys the client through the github-pages environment.",
+        "The deployed URL passes a smoke test.",
+        "Only generated build output is uploaded."
+      ],
+      "evidence": [
+        ".github/workflows/deploy-pages.yml",
+        "actionlint passed locally (2026-09-19)"
+      ],
+      "blockedReason": "The workflow cannot be executed and its public URL smoke-tested until these changes reach main and GitHub Pages is enabled with GitHub Actions as its source."
+    },
+    {
+      "id": "m0-009",
+      "milestone": "foundation",
+      "title": "Document and perform initial Google Cloud setup",
+      "status": "blocked",
+      "dependsOn": ["m0-006"],
+      "acceptanceCriteria": [
+        "The setup record contains resource names and verification evidence without credentials.",
+        "Billing alerts are configured before public deployment.",
+        "Required APIs, Artifact Registry, service accounts, and the selected Central European region are recorded."
+      ],
+      "evidence": ["docs/operations/initial-cloud-setup.md"],
+      "externalPrerequisites": [
+        "Google Cloud billing account access",
+        "Permission to configure the GitHub repository"
+      ],
+      "blockedReason": "A Google Cloud project ID, billing account authorization, and repository-administration access are required to create and verify the resources."
+    },
+    {
+      "id": "m0-010",
+      "milestone": "foundation",
+      "title": "Configure keyless GitHub-to-Google deployment",
+      "status": "pending",
+      "dependsOn": ["m0-007", "m0-009"],
+      "acceptanceCriteria": [
+        "Workload Identity Federation is restricted to this repository and production branch or environment.",
+        "No downloaded service-account key is stored in GitHub.",
+        "The deployment identity has only the required permissions."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m0-011",
+      "milestone": "foundation",
+      "title": "Add Cloud Run production deployment",
+      "status": "pending",
+      "dependsOn": ["m0-006", "m0-010"],
+      "acceptanceCriteria": [
+        "Main deploys an immutable server image to Artifact Registry and Cloud Run.",
+        "The workflow sets explicit region, CPU, memory, concurrency, timeout, minimum zero instances, and maximum one instance.",
+        "Health and version checks verify the new revision."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m0-012",
+      "milestone": "foundation",
+      "title": "Establish cost and operations guardrails",
+      "status": "pending",
+      "dependsOn": ["m0-009", "m0-011"],
+      "acceptanceCriteria": [
+        "Budget notification thresholds below EUR 20 are verified.",
+        "Artifact retention, log exclusions, uptime checks, and error alerts are recorded.",
+        "An emergency matchmaking shutdown procedure is documented."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m1-001",
+      "milestone": "offline-movement",
+      "title": "Create the Blocktown map blockout",
+      "status": "done",
+      "dependsOn": ["m0-005"],
+      "acceptanceCriteria": [
+        "The scene includes two protected spawns, a central plaza, flank routes, cover, and bounded play space.",
+        "The blockout uses mobile-appropriate geometry and materials."
+      ],
+      "evidence": [
+        "apps/client/src/game/createBlocktown.ts",
+        "npm run test:smoke (mobile Chromium, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m1-002",
+      "milestone": "offline-movement",
+      "title": "Implement the local player character and collision",
+      "status": "done",
+      "dependsOn": ["m1-001"],
+      "acceptanceCriteria": [
+        "The player moves, strafes, rotates, collides with the world, and remains inside map bounds.",
+        "Movement parameters come from shared game configuration."
+      ],
+      "evidence": [
+        "apps/client/src/game/LocalPlayerController.ts",
+        "apps/client/src/main.ts",
+        "npm run validate (2026-09-19)",
+        "npm run test:smoke (mobile Chromium, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m1-003",
+      "milestone": "offline-movement",
+      "title": "Implement the third-person camera",
+      "status": "done",
+      "dependsOn": ["m1-002"],
+      "acceptanceCriteria": [
+        "The camera follows over the shoulder with bounded pitch and configurable sensitivity.",
+        "Camera collision prevents wall clipping."
+      ],
+      "evidence": [
+        "apps/client/src/game/ThirdPersonCamera.ts",
+        "packages/game-config/src/index.ts",
+        "npm run validate (2026-09-19)",
+        "npm run test:smoke (mobile Chromium, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m1-004",
+      "milestone": "offline-movement",
+      "title": "Implement the blue movement joystick",
+      "status": "done",
+      "dependsOn": ["m1-002"],
+      "acceptanceCriteria": [
+        "The joystick tracks its originating touch, applies a dead zone, clamps magnitude, and resets on release.",
+        "Movement is camera-relative."
+      ],
+      "evidence": [
+        "apps/client/src/input/VirtualJoystick.ts",
+        "apps/client/src/game/LocalPlayerController.ts",
+        "npm run test:smoke (mobile Chromium, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m1-005",
+      "milestone": "offline-movement",
+      "title": "Implement the red aim and fire joystick",
+      "status": "done",
+      "dependsOn": ["m1-003"],
+      "acceptanceCriteria": [
+        "The joystick controls yaw and pitch with its own tracked touch.",
+        "Crossing the configurable threshold emits fire intent and returning inside stops it."
+      ],
+      "evidence": [
+        "apps/client/src/game/AimController.ts",
+        "apps/client/src/input/VirtualJoystick.ts",
+        "tests/smoke/pages.spec.ts",
+        "npm run test:smoke (2 mobile Chromium tests, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m1-006",
+      "milestone": "offline-movement",
+      "title": "Implement responsive orientation-aware HUD",
+      "status": "done",
+      "dependsOn": ["m1-004", "m1-005"],
+      "acceptanceCriteria": [
+        "Gameplay controls respect device safe areas in landscape.",
+        "Portrait menus work and gameplay displays a rotate-device interstitial.",
+        "Touch targets meet the 44 CSS-pixel baseline."
+      ],
+      "evidence": [
+        "apps/client/index.html",
+        "apps/client/src/styles.css",
+        "tests/smoke/pages.spec.ts",
+        "npm run test:smoke (3 mobile Chromium tests, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m1-007",
+      "milestone": "offline-movement",
+      "title": "Add client performance instrumentation and reduced effects",
+      "status": "blocked",
+      "dependsOn": ["m1-001", "m1-006"],
+      "acceptanceCriteria": [
+        "Developers can inspect FPS, frame time, draw calls, and memory where supported.",
+        "Reduced-effects mode disables costly optional effects.",
+        "The vertical slice holds 30 FPS on the selected minimum test device."
+      ],
+      "evidence": [
+        "apps/client/src/game/PerformanceMonitor.ts",
+        "tests/smoke/pages.spec.ts",
+        "npm run test:smoke (4 mobile Chromium tests, 2026-09-19)"
+      ],
+      "blockedReason": "Instrumentation and reduced-effects mode are implemented, but the 30 FPS acceptance gate requires selecting and testing a physical minimum mobile device."
+    },
+    {
+      "id": "m2-001",
+      "milestone": "offline-combat",
+      "title": "Implement pistol configuration and presentation",
+      "status": "done",
+      "dependsOn": ["m1-005", "m0-004"],
+      "acceptanceCriteria": [
+        "The pistol displays muzzle flash, recoil, tracer, audio, ammo, and reload state.",
+        "Gameplay values are configuration-driven."
+      ],
+      "evidence": [
+        "apps/client/src/game/PistolController.ts",
+        "apps/client/src/main.ts",
+        "tests/smoke/pages.spec.ts",
+        "npm run test:smoke (automatic fire and ammo update, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m2-002",
+      "milestone": "offline-combat",
+      "title": "Implement hitscan and hit geometry in the local harness",
+      "status": "done",
+      "dependsOn": ["m2-001"],
+      "acceptanceCriteria": [
+        "Shots stop at world geometry and only hit targets within range.",
+        "The local harness separates shot intent from authoritative resolution."
+      ],
+      "evidence": [
+        "apps/client/src/game/LocalHitscanResolver.ts",
+        "apps/client/src/main.ts",
+        "tests/smoke/pages.spec.ts",
+        "npm run test:smoke (shot resolution result asserted, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m2-003",
+      "milestone": "offline-combat",
+      "title": "Implement health, damage, elimination, and respawn simulation",
+      "status": "done",
+      "dependsOn": ["m2-002", "m0-004"],
+      "acceptanceCriteria": [
+        "Health is bounded and damage cannot apply to eliminated players.",
+        "Elimination disables movement and firing.",
+        "Respawn restores configured state and supports temporary protection."
+      ],
+      "evidence": [
+        "packages/simulation/src/index.ts",
+        "packages/simulation/src/index.test.ts",
+        "npm test --workspace @scooter-shooter/simulation (5 tests, 2026-09-19)"
+      ]
+    },
+    {
+      "id": "m2-004",
+      "milestone": "offline-combat",
+      "title": "Implement Team Deathmatch rules",
+      "status": "done",
+      "dependsOn": ["m2-003"],
+      "acceptanceCriteria": [
+        "Waiting, countdown, in-progress, ended, and reset states are deterministic.",
+        "Score limit, timer, teams, draws, joins, leaves, and eliminations are covered by tests."
+      ],
+      "evidence": [
+        "Implemented a deterministic TeamDeathmatch state machine covering balanced joins, safe leaves, countdown cancellation, timed and score-limit endings, draws, resets, and elimination scoring.",
+        "Validated 6 Team Deathmatch tests and all 11 simulation tests on 2026-04-10."
+      ]
+    },
+    {
+      "id": "m2-005",
+      "milestone": "offline-combat",
+      "title": "Complete the combat HUD and feedback",
+      "status": "done",
+      "dependsOn": ["m2-003", "m2-004", "m1-006"],
+      "acceptanceCriteria": [
+        "HUD shows health, ammunition, timer, score, crosshair, hit confirmation, elimination, respawn, and result states.",
+        "Team information uses labels or icons in addition to color."
+      ],
+      "evidence": [
+        "Integrated the shared health, respawn, and Team Deathmatch simulations into the offline target harness.",
+        "HUD now renders labeled team scores, match countdown/timer/results, health, ammunition, hit/elimination feedback, and target respawn state.",
+        "Full npm run validate and all 4 Playwright mobile Chromium smoke tests passed on 2026-04-10."
+      ]
+    },
+    {
+      "id": "m3-001",
+      "milestone": "two-player-multiplayer",
+      "title": "Configure Firebase guest and Google authentication",
+      "status": "pending",
+      "dependsOn": ["m0-009"],
+      "acceptanceCriteria": [
+        "Guests receive anonymous identities.",
+        "Anonymous identities can link to Google without silently losing progress.",
+        "The server verifies Firebase ID tokens."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-002",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement the authenticated WebSocket handshake",
+      "status": "pending",
+      "dependsOn": ["m0-003", "m0-006", "m3-001"],
+      "acceptanceCriteria": [
+        "Tokens are sent in an application handshake rather than a URL.",
+        "The server validates origin, token, protocol version, message size, and rate.",
+        "Failures return explicit protocol errors without exposing internals."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-003",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement server-authoritative movement",
+      "status": "pending",
+      "dependsOn": ["m3-002", "m1-002"],
+      "acceptanceCriteria": [
+        "Clients send sequenced inputs rather than transforms.",
+        "The server validates and simulates movement at a fixed 20 Hz.",
+        "Impossible magnitudes, rates, timestamps, and sequence jumps are rejected."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-004",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement client prediction and reconciliation",
+      "status": "pending",
+      "dependsOn": ["m3-003"],
+      "acceptanceCriteria": [
+        "The local player predicts unacknowledged input.",
+        "Authoritative acknowledgements reconcile without persistent drift.",
+        "Teleports and respawns bypass normal smoothing."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-005",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement remote-player snapshot interpolation",
+      "status": "pending",
+      "dependsOn": ["m3-003"],
+      "acceptanceCriteria": [
+        "Remote entities render from a bounded interpolation buffer.",
+        "Late or missing snapshots do not produce invalid transforms."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-006",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement server-authoritative pistol combat",
+      "status": "pending",
+      "dependsOn": ["m3-003", "m2-003"],
+      "acceptanceCriteria": [
+        "The server validates fire cadence, state, ammo, reload, range, and aim plausibility.",
+        "Clients receive authoritative shot, damage, elimination, and respawn events.",
+        "Clients cannot declare hits or rewards."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-007",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement capped lag compensation",
+      "status": "pending",
+      "dependsOn": ["m3-006"],
+      "acceptanceCriteria": [
+        "The server keeps a bounded transform history and rewinds eligible target hitboxes.",
+        "Claims older than the configured maximum are rejected or clamped.",
+        "Latency compensation tests cover current, delayed, and abusive shot times."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-008",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement authoritative online Team Deathmatch",
+      "status": "pending",
+      "dependsOn": ["m3-006", "m2-004"],
+      "acceptanceCriteria": [
+        "The server owns teams, countdown, timer, score, result, reset, and spawn selection.",
+        "A player leaving cannot crash or permanently block the room."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-009",
+      "milestone": "two-player-multiplayer",
+      "title": "Implement disconnect and reconnect handling",
+      "status": "pending",
+      "dependsOn": ["m3-002", "m3-008"],
+      "acceptanceCriteria": [
+        "Transient disconnects retry with capped exponential backoff for up to 15 seconds.",
+        "A reconnect requires the same user and a valid reconnect token.",
+        "Failure returns to the menu with a clear reason."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m3-010",
+      "milestone": "two-player-multiplayer",
+      "title": "Verify the two-player multiplayer gate",
+      "status": "pending",
+      "dependsOn": ["m3-004", "m3-005", "m3-007", "m3-008", "m3-009"],
+      "acceptanceCriteria": [
+        "Two real mobile devices complete three consecutive matches.",
+        "Movement, shots, health, eliminations, score, timer, disconnect, and reconnect are verified.",
+        "Results and discovered limits are recorded."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-001",
+      "milestone": "four-player-public-test",
+      "title": "Implement Quick Play room filling and join-in-progress",
+      "status": "pending",
+      "dependsOn": ["m3-008"],
+      "acceptanceCriteria": [
+        "Quick Play fills an eligible open room while maintaining balanced teams.",
+        "Late joiners receive the current authoritative state and a safe spawn.",
+        "A match starts only when both teams have a player."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-002",
+      "milestone": "four-player-public-test",
+      "title": "Implement Firestore player profiles",
+      "status": "pending",
+      "dependsOn": ["m3-001", "m0-009"],
+      "acceptanceCriteria": [
+        "Profiles store the minimum schema defined in the GDD.",
+        "Only the backend can modify authoritative progression fields.",
+        "Schema versions and timestamps are recorded."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-003",
+      "milestone": "four-player-public-test",
+      "title": "Implement levels and XP rewards",
+      "status": "pending",
+      "dependsOn": ["m4-002", "m3-008"],
+      "acceptanceCriteria": [
+        "The server awards configured completion, win, and elimination XP.",
+        "Level progression is bounded from 1 through 100.",
+        "Retries cannot award the same match twice."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-004",
+      "milestone": "four-player-public-test",
+      "title": "Implement Power Point rewards",
+      "status": "pending",
+      "dependsOn": ["m4-002", "m3-008"],
+      "acceptanceCriteria": [
+        "The server awards configured completion and win currency.",
+        "Transactions use unique IDs and are idempotent.",
+        "Clients cannot directly modify balances."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-005",
+      "milestone": "four-player-public-test",
+      "title": "Implement menu, profile, and result flows",
+      "status": "pending",
+      "dependsOn": ["m4-001", "m4-003", "m4-004"],
+      "acceptanceCriteria": [
+        "Players can enter Quick Play, inspect level and Power Points, view results, replay, and return to menu.",
+        "Unavailable future features are not presented as functional."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-006",
+      "milestone": "four-player-public-test",
+      "title": "Add privacy-minimal observability",
+      "status": "pending",
+      "dependsOn": ["m0-012", "m4-001"],
+      "acceptanceCriteria": [
+        "Metrics cover connections, rooms, tick duration, snapshot traffic, errors, matches, and reconnect outcomes.",
+        "Client errors exclude free-form personal content.",
+        "Production logs exclude successful per-tick traffic."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-007",
+      "milestone": "four-player-public-test",
+      "title": "Create headless multiplayer load clients",
+      "status": "pending",
+      "dependsOn": ["m4-001", "m3-006"],
+      "acceptanceCriteria": [
+        "Headless clients authenticate in a test environment, join rooms, move, aim, fire, and remain connected.",
+        "Runs are bounded by client count and duration.",
+        "Results report errors, latency, traffic, and completion."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m4-008",
+      "milestone": "four-player-public-test",
+      "title": "Verify the four-player public-test gate",
+      "status": "pending",
+      "dependsOn": ["m3-010", "m4-005", "m4-006", "m4-007"],
+      "acceptanceCriteria": [
+        "Four players complete three consecutive matches without restart, unrecoverable desync, or client crash.",
+        "The installed PWA reaches the secure production WebSocket endpoint.",
+        "Performance, cost, and operational evidence meet the GDD success criteria."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m5-001",
+      "milestone": "capacity-validation",
+      "title": "Profile simulation and network capacity",
+      "status": "pending",
+      "dependsOn": ["m4-008"],
+      "acceptanceCriteria": [
+        "CPU, memory, tick percentiles, bandwidth, errors, and cost per player-hour are recorded.",
+        "The largest stable room size is identified without changing the advertised cap."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m5-002",
+      "milestone": "capacity-validation",
+      "title": "Run stepped load tests from 4 to 20 players",
+      "status": "pending",
+      "dependsOn": ["m5-001"],
+      "acceptanceCriteria": [
+        "Bounded tests run at 4, 8, 12, 16, and 20 clients.",
+        "Each approved step meets server tick, traffic, error, and reconciliation budgets.",
+        "A real-device match verifies each approved capacity step."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m5-003",
+      "milestone": "capacity-validation",
+      "title": "Decide the multi-instance room ownership strategy",
+      "status": "pending",
+      "dependsOn": ["m5-002"],
+      "acceptanceCriteria": [
+        "The decision compares one larger instance, instance-aware routing, and a dedicated game-server platform.",
+        "The design does not rely on best-effort session affinity as a room ownership guarantee.",
+        "The choice includes expected baseline and player-hour cost."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m5-004",
+      "milestone": "capacity-validation",
+      "title": "Publish the verified player cap",
+      "status": "pending",
+      "dependsOn": ["m5-002", "m5-003"],
+      "acceptanceCriteria": [
+        "Configuration, UI, and documentation use the highest verified capacity and no higher value.",
+        "If 20 players are not verified, the lower supported cap remains explicit."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m6-001",
+      "milestone": "future-expansion",
+      "title": "Implement the extensible character catalog",
+      "status": "pending",
+      "dependsOn": ["m4-008"],
+      "acceptanceCriteria": [
+        "Character definitions, selection, ownership, and persistence support adding content without core-code changes.",
+        "One original character remains fully usable."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m6-002",
+      "milestone": "future-expansion",
+      "title": "Implement cosmetic costumes and unlocks",
+      "status": "pending",
+      "dependsOn": ["m6-001", "m4-004"],
+      "acceptanceCriteria": [
+        "Cosmetics alter presentation only.",
+        "Unlock requirements and Power Point spending are server-authoritative and idempotent.",
+        "Asset license metadata is recorded."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m6-003",
+      "milestone": "future-expansion",
+      "title": "Implement one simple vehicle",
+      "status": "pending",
+      "dependsOn": ["m4-008"],
+      "acceptanceCriteria": [
+        "The vehicle has server-authoritative entry, exit, movement, collision, and replication.",
+        "Vehicle use preserves mobile performance and cannot bypass map boundaries."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m6-004",
+      "milestone": "future-expansion",
+      "title": "Add isolated additional game modes",
+      "status": "pending",
+      "dependsOn": ["m5-004"],
+      "acceptanceCriteria": [
+        "Each new mode implements the documented GameMode contract.",
+        "Core networking does not accumulate mode-specific conditionals.",
+        "Each mode has independent rule and lifecycle tests."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "m6-005",
+      "milestone": "future-expansion",
+      "title": "Implement the optional AI costume idea service",
+      "status": "pending",
+      "dependsOn": ["m6-002"],
+      "acceptanceCriteria": [
+        "The feature is separately deployable and guarded by a feature flag.",
+        "Its failure cannot block login, matchmaking, progression, or normal costume selection.",
+        "Moderation, rate limits, originality safeguards, and a separate cost budget are verified before enablement."
+      ],
+      "evidence": []
+    }
+  ]
+}

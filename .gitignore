@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build and test output
+coverage/
+dist/
+playwright-report/
+test-results/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

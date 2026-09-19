@@ -1,0 +1,22 @@
+{
+  "name": "@scooter-shooter/simulation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@scooter-shooter/game-config": "*"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "prebuild": "npm run build --workspace @scooter-shooter/game-config",
+    "test": "npm run build && node --test dist/*.test.js",
+    "pretypecheck": "npm run build --workspace @scooter-shooter/game-config",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}

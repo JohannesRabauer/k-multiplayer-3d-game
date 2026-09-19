@@ -1,0 +1,17 @@
+{
+  "name": "@scooter-shooter/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@scooter-shooter/protocol": "*"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "prebuild": "npm run build --workspace @scooter-shooter/protocol",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test dist/server.test.js",
+    "pretypecheck": "npm run build --workspace @scooter-shooter/protocol",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}

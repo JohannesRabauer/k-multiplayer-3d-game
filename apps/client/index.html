@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta
+      name="description"
+      content="scooter-shooter, a mobile-first online 3D arena game."
+    />
+    <meta name="theme-color" content="#101b3b" />
+    <title>scooter-shooter</title>
+  </head>
+  <body>
+    <main id="app" aria-live="polite">
+      <canvas id="game-canvas" aria-label="scooter-shooter game view"></canvas>
+      <section id="status-panel" class="status-panel">
+        <p class="eyebrow">mobile multiplayer prototype</p>
+        <h1>scooter-shooter</h1>
+        <p id="status-message">Loading 3D engine...</p>
+      </section>
+      <section
+        id="game-controls"
+        class="game-controls"
+        aria-label="Game controls"
+      >
+        <header class="match-score" aria-label="Match status">
+          <output class="match-score__team match-score__team--blue">
+            <span aria-hidden="true">◆</span>
+            <span>BLUE</span>
+            <strong id="blue-score">0</strong>
+          </output>
+          <time id="match-timer" class="match-score__timer" datetime="PT4M">
+            04:00
+          </time>
+          <output class="match-score__team match-score__team--red">
+            <strong id="red-score">0</strong>
+            <span>RED</span>
+            <span aria-hidden="true">◆</span>
+          </output>
+        </header>
+        <div id="crosshair" class="crosshair" aria-hidden="true"></div>
+        <output
+          id="combat-feedback"
+          class="combat-feedback"
+          aria-live="assertive"
+        ></output>
+        <output id="match-state" class="match-state" aria-live="polite">
+          WAITING FOR PLAYERS
+        </output>
+        <output
+          id="respawn-status"
+          class="respawn-status"
+          aria-live="polite"
+          hidden
+        ></output>
+        <div class="player-status" aria-label="Player status">
+          <output class="player-status__health" aria-label="Health">
+            <span aria-hidden="true">♥</span>
+            <strong id="health-value">100</strong>
+          </output>
+          <output class="player-status__ammo" aria-label="Ammunition">
+            <strong id="ammo-value">8</strong>
+            <span>/ 8</span>
+          </output>
+        </div>
+        <div
+          id="movement-joystick"
+          class="joystick joystick--movement"
+          aria-label="Movement joystick"
+          role="application"
+        >
+          <div class="joystick__knob"></div>
+        </div>
+        <div
+          id="aim-joystick"
+          class="joystick joystick--aim"
+          aria-label="Aim and fire joystick"
+          role="application"
+        >
+          <div class="joystick__knob"></div>
+        </div>
+      </section>
+      <aside id="orientation-overlay" class="orientation-overlay" role="status">
+        <div class="orientation-overlay__phone" aria-hidden="true">↻</div>
+        <strong>Rotate your device</strong>
+        <span>Gameplay uses landscape mode.</span>
+      </aside>
+      <output id="performance-stats" class="performance-stats" hidden></output>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

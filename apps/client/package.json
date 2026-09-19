@@ -1,0 +1,24 @@
+{
+  "name": "@scooter-shooter/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@babylonjs/core": "^9.27.1",
+    "@scooter-shooter/game-config": "*",
+    "@scooter-shooter/simulation": "*"
+  },
+  "devDependencies": {
+    "vite": "^7.3.6",
+    "vite-plugin-pwa": "^1.3.0"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "prebuild": "npm run build --workspace @scooter-shooter/simulation",
+    "pretypecheck": "npm run build --workspace @scooter-shooter/simulation",
+    "preview": "vite preview",
+    "test": "node --test",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}
