@@ -112,6 +112,11 @@ export class TrainingBotController {
     return this.#shotEffects.getActiveCount();
   }
 
+  /** Total bot shot visuals rendered so far. */
+  getRenderedShotEffectCount(): number {
+    return this.#shotEffects.getSpawnedCount();
+  }
+
   /** Observed hit rate across the session, used by smoke telemetry. */
   getAccuracyTelemetry(): { fired: number; hit: number } {
     return { fired: this.#shotsFired, hit: this.#shotsHit };

@@ -83,23 +83,41 @@ test("enters, drives, and exits the nearby vehicle", async ({ page }) => {
   await expect(actionButton).toHaveText("Drive vehicle");
 });
 
-test("renders visible bot shot effects when bots attack", async ({ page }) => {
-  test.setTimeout(90_000);
+test("renders every bot shot and misses often enough to be beatable", async ({
+  page
+}) => {
+  test.setTimeout(180_000);
   await openTraining(page);
   const gameShell = page.locator("#game-shell");
+
+  // Cumulative counters, because an individual tracer is only on screen for a
+  // few frames and a sampling poll would race it.
   await expect
     .poll(
       async () =>
-        Number((await gameShell.getAttribute("data-bot-shot-effects")) ?? "0"),
-      { timeout: 60_000 }
+        Number((await gameShell.getAttribute("data-bot-shots-fired")) ?? "0"),
+      { timeout: 150_000 }
     )
-    .toBeGreaterThan(0);
+    .toBeGreaterThan(12);
+
+  // One atomic snapshot, because reading each counter separately lets the
+  // render loop advance between reads and skew the comparison.
+  const { fired, hit, rendered } = await gameShell.evaluate((element) => ({
+    fired: Number((element as HTMLElement).dataset.botShotsFired ?? "0"),
+    hit: Number((element as HTMLElement).dataset.botShotsHit ?? "0"),
+    rendered: Number(
+      (element as HTMLElement).dataset.botShotEffectsRendered ?? "0"
+    )
+  }));
+
+  expect(rendered).toBe(fired);
+  expect(hit).toBeLessThan(fired);
 });
 
 test("runs rounds with a frozen warmup instead of endless respawns", async ({
   page
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await openTraining(page);
   const matchState = page.locator("#match-state");
   const gameShell = page.locator("#game-shell");
@@ -114,24 +132,6 @@ test("runs rounds with a frozen warmup instead of endless respawns", async ({
   });
   await expect(gameShell).toHaveAttribute("data-round-live", "true");
   await expect(matchState).toHaveAttribute("data-round", "1");
-});
-
-test("bots miss often enough to be beatable", async ({ page }) => {
-  test.setTimeout(120_000);
-  await openTraining(page);
-  const gameShell = page.locator("#game-shell");
-
-  await expect
-    .poll(
-      async () =>
-        Number((await gameShell.getAttribute("data-bot-shots-fired")) ?? "0"),
-      { timeout: 90_000 }
-    )
-    .toBeGreaterThan(8);
-
-  const fired = Number(await gameShell.getAttribute("data-bot-shots-fired"));
-  const hit = Number(await gameShell.getAttribute("data-bot-shots-hit"));
-  expect(hit).toBeLessThan(fired);
 });
 
 async function openTraining(page: Page): Promise<void> {

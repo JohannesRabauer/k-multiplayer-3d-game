@@ -27,6 +27,7 @@ export class ShotEffects {
   readonly #pool: PooledEffect[] = [];
   readonly #scene: Scene;
   #nextIndex = 0;
+  #spawnedCount = 0;
 
   constructor(scene: Scene, colorHex: string, name: string) {
     this.#scene = scene;
@@ -96,11 +97,20 @@ export class ShotEffects {
     effect.beam.setEnabled(true);
     effect.flash.setEnabled(true);
     effect.impact.setEnabled(true);
+    this.#spawnedCount += 1;
   }
 
   /** Number of effects currently rendered; used by smoke telemetry. */
   getActiveCount(): number {
     return this.#pool.filter((effect) => effect.expiresAtMs !== 0).length;
+  }
+
+  /**
+   * Total effects spawned since creation. Smoke tests poll this instead of the
+   * active count, which is only non-zero for a few frames per shot.
+   */
+  getSpawnedCount(): number {
+    return this.#spawnedCount;
   }
 
   dispose(): void {

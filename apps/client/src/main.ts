@@ -424,6 +424,9 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
     gameShell.dataset.botShotEffects = String(
       botController.getActiveShotEffectCount()
     );
+    gameShell.dataset.botShotEffectsRendered = String(
+      botController.getRenderedShotEffectCount()
+    );
     const accuracy = botController.getAccuracyTelemetry();
     gameShell.dataset.botShotsFired = String(accuracy.fired);
     gameShell.dataset.botShotsHit = String(accuracy.hit);
