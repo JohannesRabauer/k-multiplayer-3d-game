@@ -186,7 +186,7 @@
         "Required APIs, Artifact Registry, service accounts, and the selected Central European region are recorded."
       ],
       "evidence": [
-        "Created billed project scooter-shooter-jr-2026 in europe-west3 with a EUR 20 budget and 50/75/90/100 percent alerts.",
+        "Created billed data project scooter-shooter-jr-2026 and runtime project scooter-shooter-run-2026 in europe-west3 under one EUR 20 budget with 50/75/90/100 percent alerts.",
         "Created Artifact Registry, Firestore, Firebase web app, anonymous and Google sign-in providers, runtime and deployment service accounts, monitoring resources, and documented non-secret evidence in docs/operations/initial-cloud-setup.md."
       ],
       "externalPrerequisites": [
@@ -206,16 +206,16 @@
         "The deployment identity has only the required permissions."
       ],
       "evidence": [
-        "Created projects/436977228213/locations/global/workloadIdentityPools/github-actions/providers/github with repository and refs/heads/main attribute restrictions.",
+        "Created projects/473376195766/locations/global/workloadIdentityPools/github-actions/providers/github with repository and refs/heads/main attribute restrictions.",
         "Configured the production GitHub environment for main and stored only non-secret deployment/Firebase variables; verified both service accounts have no user-managed keys.",
-        "The keyless GitHub deployment authenticated, pushed an image, and deployed a Cloud Run revision in run 35491613569."
+        "The keyless GitHub deployment authenticated, pushed an image, deployed a Cloud Run revision, and verified public endpoints in run 35493950607."
       ]
     },
     {
       "id": "m0-011",
       "milestone": "foundation",
       "title": "Add Cloud Run production deployment",
-      "status": "in_progress",
+      "status": "done",
       "dependsOn": ["m0-006", "m0-010"],
       "acceptanceCriteria": [
         "Main deploys an immutable server image to Artifact Registry and Cloud Run.",
@@ -224,23 +224,26 @@
       ],
       "evidence": [
         ".github/workflows/deploy-cloud-run.yml",
-        "GitHub run 35492732039 authenticated keylessly, pushed immutable image 378e39d9c18b5860fa504d3c38de18a5569a5e70, and deployed a ready revision with explicit resource limits.",
-        "Cloud Run reports the revision and traffic route ready; /readyz and /version return HTTP 200.",
-        "The failed uptime alert identified that Cloud Run intercepts /healthz. The liveness endpoint and workflow are being migrated to /livez."
+        "GitHub run 35493950607 authenticated keylessly, pushed immutable image f78128305221c1553640da5421fbe1506076473d, and deployed a ready revision with explicit resource limits.",
+        "The deployment workflow verified /livez, /readyz, and /version with HTTP 200 against https://scooter-shooter-server-mpdmk2zohq-ey.a.run.app."
       ]
     },
     {
       "id": "m0-012",
       "milestone": "foundation",
       "title": "Establish cost and operations guardrails",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m0-009", "m0-011"],
       "acceptanceCriteria": [
         "Budget notification thresholds below EUR 20 are verified.",
         "Artifact retention, log exclusions, uptime checks, and error alerts are recorded.",
         "An emergency matchmaking shutdown procedure is documented."
       ],
-      "evidence": []
+      "evidence": [
+        "A shared EUR 20 budget covers both data and runtime projects with 50/75/90/100 percent thresholds.",
+        "Configured a /livez uptime check, email-backed unavailability/error/instance alerts, high-volume log exclusions, and Artifact Registry cleanup retaining 10 recent images.",
+        "Tested the emergency ingress shutdown and added a monthly cost-review workflow; its first run created issue #1."
+      ]
     },
     {
       "id": "m1-001",
