@@ -28,6 +28,7 @@ import { OfflineCombatController } from "./game/OfflineCombatController";
 import { PerformanceMonitor } from "./game/PerformanceMonitor";
 import { PistolController } from "./game/PistolController";
 import { createThirdPersonCamera } from "./game/ThirdPersonCamera";
+import { TrainingBotController } from "./game/TrainingBotController";
 import { VirtualJoystick } from "./input/VirtualJoystick";
 
 function requireHtmlElement(id: string): HTMLElement {
@@ -62,6 +63,14 @@ function requireButtonElement(id: string): HTMLButtonElement {
   return element;
 }
 
+function requireSelectElement(id: string): HTMLSelectElement {
+  const element = requireHtmlElement(id);
+  if (!(element instanceof HTMLSelectElement)) {
+    throw new TypeError(`#${id} must be a select element.`);
+  }
+  return element;
+}
+
 const canvasElement = requireHtmlElement("game-canvas");
 if (!(canvasElement instanceof HTMLCanvasElement)) {
   throw new TypeError("#game-canvas must be a canvas element.");
@@ -74,6 +83,7 @@ const movementJoystickElement = requireHtmlElement("movement-joystick");
 const aimJoystickElement = requireHtmlElement("aim-joystick");
 const performanceStatsElement = requireOutputElement("performance-stats");
 const ammoValueElement = requireHtmlElement("ammo-value");
+const healthValueElement = requireHtmlElement("health-value");
 const crosshairElement = requireHtmlElement("crosshair");
 const blueScoreElement = requireHtmlElement("blue-score");
 const redScoreElement = requireHtmlElement("red-score");
@@ -99,6 +109,7 @@ const signOutButton = requireButtonElement("sign-out");
 const openTrainingButton = requireButtonElement("open-training");
 const offlineTrainingButton = requireButtonElement("offline-training");
 const leaveTrainingButton = requireButtonElement("leave-training");
+const botCountSelect = requireSelectElement("bot-count");
 
 let stopGame: (() => void) | undefined;
 
@@ -108,7 +119,7 @@ function showCompatibilityFailure(message: string): void {
   statusMessage.textContent = message;
 }
 
-function createScene(engine: Engine): Scene {
+function createScene(engine: Engine, botCount: number): Scene {
   const scene = new Scene(engine);
   scene.collisionsEnabled = true;
   scene.clearColor = new Color4(0.055, 0.1, 0.22, 1);
@@ -136,21 +147,45 @@ function createScene(engine: Engine): Scene {
   playerMaterial.diffuseColor = Color3.FromHexString("#57c7ff");
   player.material = playerMaterial;
 
-  const target = MeshBuilder.CreateCapsule(
-    "target-dummy",
-    { height: 2.4, radius: 0.55 },
-    scene
-  );
-  target.position.copyFrom(map.redSpawnPositions[0]);
-  target.position.y = 1.2;
   const targetMaterial = new StandardMaterial("target-material", scene);
   targetMaterial.diffuseColor = Color3.FromHexString("#ff557c");
-  target.material = targetMaterial;
+  const botSpawnPositions = [
+    new Vector3(11, 0.1, 0),
+    map.redSpawnPositions[0],
+    map.redSpawnPositions[1],
+    new Vector3(15, 0.1, 0),
+    new Vector3(4, 0.1, -7),
+    new Vector3(4, 0.1, 7),
+    new Vector3(-4, 0.1, -7),
+    new Vector3(-4, 0.1, 7)
+  ];
+  const bots = botSpawnPositions
+    .slice(0, botCount)
+    .map((spawnPosition, index) => {
+      const id = `training-bot-${String(index + 1)}`;
+      const mesh = MeshBuilder.CreateCapsule(
+        id,
+        { height: 2.4, radius: 0.55 },
+        scene
+      );
+      mesh.position.copyFrom(spawnPosition);
+      mesh.position.y = 1.2;
+      mesh.material = targetMaterial;
+      mesh.checkCollisions = true;
+      mesh.ellipsoid = new Vector3(0.55, 1.2, 0.55);
+      return { id, mesh, spawnPosition: mesh.position.clone() };
+    });
   const combatController = new OfflineCombatController(
-    target,
+    player,
+    player.position,
+    bots.map((bot) => ({
+      ...bot,
+      spawnPosition: bot.spawnPosition
+    })),
     {
       blueScore: blueScoreElement,
       feedback: combatFeedbackElement,
+      health: healthValueElement,
       matchState: matchStateElement,
       redScore: redScoreElement,
       respawn: respawnStatusElement,
@@ -163,7 +198,7 @@ function createScene(engine: Engine): Scene {
   const hitscanResolver = new LocalHitscanResolver(
     scene,
     map.collisionMeshes,
-    new Map([[target, "target-dummy"]])
+    new Map(bots.map((bot) => [bot.mesh, bot.id] as const))
   );
   const playerController = new LocalPlayerController(
     scene,
@@ -175,7 +210,10 @@ function createScene(engine: Engine): Scene {
   const movementJoystick = new VirtualJoystick(movementJoystickElement, {
     deadZone: DEFAULT_GAME_CONFIG.movement.inputDeadZone,
     onInput: (x, y) => {
-      playerController.setMoveInput(x, y);
+      playerController.setMoveInput(
+        combatController.isPlayerAlive() ? x : 0,
+        combatController.isPlayerAlive() ? y : 0
+      );
     }
   });
   const pistolController = new PistolController(scene, player, camera, {
@@ -190,14 +228,15 @@ function createScene(engine: Engine): Scene {
       const result = hitscanResolver.resolve(origin, direction);
       crosshairElement.dataset.lastShotResult = result.kind;
       if (result.kind === "target") {
-        combatController.registerTargetHit(performance.now());
+        combatController.registerTargetHit(result.targetId, performance.now());
       }
     }
   });
   const aimController = new AimController(scene, camera, {
     onFireIntentChanged: (isFiring) => {
-      aimJoystickElement.dataset.firing = String(isFiring);
-      pistolController.setTriggerHeld(isFiring);
+      const canFire = isFiring && combatController.isPlayerAlive();
+      aimJoystickElement.dataset.firing = String(canFire);
+      pistolController.setTriggerHeld(canFire);
     }
   });
   const aimJoystick = new VirtualJoystick(aimJoystickElement, {
@@ -212,11 +251,27 @@ function createScene(engine: Engine): Scene {
     performanceStatsElement,
     new URLSearchParams(window.location.search)
   );
+  const botController = new TrainingBotController(
+    scene,
+    bots,
+    player,
+    map.playAreaMinimum,
+    map.playAreaMaximum,
+    map.collisionMeshes,
+    (botId, nowMs) => {
+      combatController.registerBotHit(botId, nowMs);
+    }
+  );
   scene.onBeforeRenderObservable.add(() => {
     combatController.update(performance.now());
+    if (!combatController.isPlayerAlive()) {
+      playerController.setMoveInput(0, 0);
+      pistolController.setTriggerHeld(false);
+    }
   });
   scene.onDisposeObservable.addOnce(() => {
     performanceMonitor.dispose();
+    botController.dispose();
     pistolController.dispose();
     aimJoystick.dispose();
     aimController.dispose(scene);
@@ -242,6 +297,14 @@ function startGame(): void {
 
   entryScreen.hidden = true;
   gameShell.hidden = false;
+  const selectedBotCount = Number.parseInt(botCountSelect.value, 10);
+  const botCount =
+    Number.isInteger(selectedBotCount) &&
+    selectedBotCount >= 1 &&
+    selectedBotCount <= 8
+      ? selectedBotCount
+      : 3;
+  gameShell.dataset.botCount = String(botCount);
   const engine = new Engine(canvas, true, {
     adaptToDeviceRatio: true,
     antialias: true,
@@ -250,9 +313,9 @@ function startGame(): void {
     preserveDrawingBuffer: false,
     stencil: false
   });
-  const scene = createScene(engine);
+  const scene = createScene(engine, botCount);
 
-  statusMessage.textContent = "Foundation build ready";
+  statusMessage.textContent = `${String(botCount)} training ${botCount === 1 ? "bot" : "bots"} ready`;
   statusPanel.classList.add("status-panel--ready");
 
   engine.runRenderLoop(() => {

@@ -14,6 +14,7 @@ export interface TeamDeathmatchState {
 }
 
 export class TeamDeathmatch {
+  readonly #maximumPlayers: number;
   readonly #players = new Map<string, Team>();
   #blueScore = 0;
   #deadlineMs: number | undefined;
@@ -21,18 +22,30 @@ export class TeamDeathmatch {
   #redScore = 0;
   #winningTeam: Team | null = null;
 
-  addPlayer(playerId: string, nowMs: number): Team {
+  constructor(maximumPlayers = DEFAULT_GAME_CONFIG.match.initialMaxPlayers) {
+    if (
+      !Number.isInteger(maximumPlayers) ||
+      maximumPlayers < DEFAULT_GAME_CONFIG.match.minimumPlayers ||
+      maximumPlayers > DEFAULT_GAME_CONFIG.match.supportedMaxPlayers
+    ) {
+      throw new RangeError("Maximum players must be within supported limits.");
+    }
+    this.#maximumPlayers = maximumPlayers;
+  }
+
+  addPlayer(playerId: string, nowMs: number, requestedTeam?: Team): Team {
     const existingTeam = this.#players.get(playerId);
     if (existingTeam !== undefined) {
       return existingTeam;
     }
-    if (this.#players.size >= DEFAULT_GAME_CONFIG.match.initialMaxPlayers) {
+    if (this.#players.size >= this.#maximumPlayers) {
       throw new Error("Match is full.");
     }
 
     const bluePlayers = this.#countPlayers("blue");
     const redPlayers = this.#countPlayers("red");
-    const team: Team = bluePlayers <= redPlayers ? "blue" : "red";
+    const team: Team =
+      requestedTeam ?? (bluePlayers <= redPlayers ? "blue" : "red");
     this.#players.set(playerId, team);
     this.#startCountdownWhenReady(nowMs);
     return team;

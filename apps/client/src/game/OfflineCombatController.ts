@@ -1,71 +1,142 @@
+import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 import {
   applyDamage,
   createPlayerCombatState,
   TeamDeathmatch,
-  tryRespawn
+  tryRespawn,
+  type PlayerCombatState
 } from "@scooter-shooter/simulation";
 
 interface CombatHud {
   readonly blueScore: HTMLElement;
   readonly feedback: HTMLElement;
+  readonly health: HTMLElement;
   readonly matchState: HTMLElement;
   readonly redScore: HTMLElement;
   readonly respawn: HTMLElement;
   readonly timer: HTMLTimeElement;
 }
 
+export interface OfflineBotCombatant {
+  readonly id: string;
+  readonly mesh: AbstractMesh;
+  readonly spawnPosition: Vector3;
+}
+
+interface BotState extends OfflineBotCombatant {
+  readonly combat: PlayerCombatState;
+}
+
 export class OfflineCombatController {
-  readonly #attacker;
+  readonly #bots = new Map<string, BotState>();
   readonly #hud: CombatHud;
-  readonly #match = new TeamDeathmatch();
-  readonly #target;
-  readonly #targetMesh: AbstractMesh;
+  readonly #match: TeamDeathmatch;
+  readonly #player: PlayerCombatState;
+  readonly #playerMesh: AbstractMesh;
+  readonly #playerSpawnPosition: Vector3;
   #feedbackExpiresAtMs = 0;
 
-  constructor(targetMesh: AbstractMesh, hud: CombatHud, nowMs: number) {
-    this.#targetMesh = targetMesh;
+  constructor(
+    playerMesh: AbstractMesh,
+    playerSpawnPosition: Vector3,
+    bots: readonly OfflineBotCombatant[],
+    hud: CombatHud,
+    nowMs: number
+  ) {
+    this.#playerMesh = playerMesh;
+    this.#playerSpawnPosition = playerSpawnPosition.clone();
     this.#hud = hud;
-    this.#match.addPlayer("local-player", nowMs);
-    this.#match.addPlayer("target-dummy", nowMs);
-    this.#attacker = createPlayerCombatState("local-player", "blue", nowMs);
-    this.#target = createPlayerCombatState("target-dummy", "red", nowMs);
+    this.#match = new TeamDeathmatch(bots.length + 1);
+    this.#match.addPlayer("local-player", nowMs, "blue");
+    this.#player = createPlayerCombatState("local-player", "blue", nowMs);
+    this.#hud.health.textContent = String(this.#player.health);
+
+    for (const bot of bots) {
+      this.#match.addPlayer(bot.id, nowMs, "red");
+      this.#bots.set(bot.id, {
+        ...bot,
+        combat: createPlayerCombatState(bot.id, "red", nowMs)
+      });
+    }
     this.update(nowMs);
   }
 
-  registerTargetHit(nowMs: number): void {
-    if (this.#match.getState(nowMs).phase !== "in_progress") {
+  registerTargetHit(targetId: string, nowMs: number): void {
+    if (
+      !this.#player.isAlive ||
+      this.#match.getState(nowMs).phase !== "in_progress"
+    ) {
       this.#showFeedback("WAIT FOR START", "blocked", nowMs, 700);
       return;
     }
 
+    const bot = this.#bots.get(targetId);
+    if (bot === undefined) {
+      return;
+    }
     const result = applyDamage(
-      this.#attacker,
-      this.#target,
+      this.#player,
+      bot.combat,
       DEFAULT_GAME_CONFIG.pistol.damage,
       nowMs
     );
     if (!result.applied) {
       return;
     }
-
     if (!result.eliminated) {
       this.#showFeedback("HIT", "hit", nowMs, 180);
       return;
     }
 
-    this.#match.recordElimination("local-player", "target-dummy", nowMs);
-    this.#targetMesh.setEnabled(false);
+    this.#match.recordElimination("local-player", targetId, nowMs);
+    bot.mesh.setEnabled(false);
     this.#showFeedback("ELIMINATION", "elimination", nowMs, 900);
+  }
+
+  registerBotHit(botId: string, nowMs: number): void {
+    if (this.#match.getState(nowMs).phase !== "in_progress") {
+      return;
+    }
+    const bot = this.#bots.get(botId);
+    if (bot?.combat.isAlive !== true) {
+      return;
+    }
+
+    const result = applyDamage(bot.combat, this.#player, 10, nowMs);
+    if (!result.applied) {
+      return;
+    }
+    this.#hud.health.textContent = String(result.remainingHealth);
+    if (!result.eliminated) {
+      return;
+    }
+
+    this.#match.recordElimination(botId, "local-player", nowMs);
+    this.#playerMesh.setEnabled(false);
+    this.#showFeedback("ELIMINATED", "blocked", nowMs, 900);
+  }
+
+  isPlayerAlive(): boolean {
+    return this.#player.isAlive;
   }
 
   update(nowMs: number): void {
     this.#match.update(nowMs);
 
-    if (tryRespawn(this.#target, nowMs)) {
-      this.#targetMesh.setEnabled(true);
-      this.#showFeedback("TARGET RESPAWNED", "respawn", nowMs, 700);
+    for (const bot of this.#bots.values()) {
+      if (tryRespawn(bot.combat, nowMs)) {
+        bot.mesh.position.copyFrom(bot.spawnPosition);
+        bot.mesh.setEnabled(true);
+        this.#showFeedback("BOT RESPAWNED", "respawn", nowMs, 700);
+      }
+    }
+    if (tryRespawn(this.#player, nowMs)) {
+      this.#playerMesh.position.copyFrom(this.#playerSpawnPosition);
+      this.#playerMesh.setEnabled(true);
+      this.#hud.health.textContent = String(this.#player.health);
+      this.#showFeedback("RESPAWNED", "respawn", nowMs, 700);
     }
 
     const state = this.#match.getState(nowMs);
@@ -110,13 +181,13 @@ export class OfflineCombatController {
   }
 
   #renderRespawn(nowMs: number): void {
-    if (this.#target.respawnAtMs === undefined) {
+    if (this.#player.respawnAtMs === undefined) {
       this.#hud.respawn.hidden = true;
       return;
     }
 
     this.#hud.respawn.hidden = false;
-    this.#hud.respawn.textContent = `TARGET RESPAWNS IN ${String(Math.ceil((this.#target.respawnAtMs - nowMs) / 1_000))}`;
+    this.#hud.respawn.textContent = `RESPAWNING IN ${String(Math.ceil((this.#player.respawnAtMs - nowMs) / 1_000))}`;
   }
 
   #showFeedback(

@@ -9,7 +9,7 @@
     "done": "Acceptance criteria were verified and evidence is recorded.",
     "blocked": "Cannot proceed without an external prerequisite; blockedReason must be present."
   },
-  "updatedAt": "2026-09-19T22:24:00+02:00",
+  "updatedAt": "2026-09-20T13:00:00+02:00",
   "tasks": [
     {
       "id": "planning-001",
@@ -443,6 +443,24 @@
         "Integrated the shared health, respawn, and Team Deathmatch simulations into the offline target harness.",
         "HUD now renders labeled team scores, match countdown/timer/results, health, ammunition, hit/elimination feedback, and target respawn state.",
         "Full npm run validate and all 4 Playwright mobile Chromium smoke tests passed on 2026-04-10."
+      ]
+    },
+    {
+      "id": "m2-006",
+      "milestone": "offline-combat",
+      "title": "Add configurable training bots",
+      "status": "done",
+      "dependsOn": ["m2-003", "m2-004", "m2-005"],
+      "acceptanceCriteria": [
+        "Players choose between one and eight bots before entering offline training.",
+        "Every selected bot spawns as an enemy, moves toward the player, attacks, takes damage, scores eliminations, and respawns.",
+        "Leaving and restarting training applies the newly selected bot count without retaining the previous scene."
+      ],
+      "evidence": [
+        "apps/client/src/game/TrainingBotController.ts implements collision-aware chase/strafe movement, ranged attacks, and world-geometry line-of-sight checks.",
+        "OfflineCombatController manages independent bot and player health, eliminations, team scoring, spawn protection, and respawns.",
+        "The entry screen selects one through eight bots and Playwright verifies maximum selection plus scene teardown and restart with a changed count.",
+        "npm run validate and all 4 mobile Chromium smoke tests passed on 2026-09-20."
       ]
     },
     {

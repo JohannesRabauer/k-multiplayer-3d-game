@@ -14,6 +14,21 @@ void describe("Team Deathmatch", () => {
     assert.equal(match.getState(0).phase, "countdown");
   });
 
+  void it("supports explicit teams for offline opponents", () => {
+    const match = new TeamDeathmatch(9);
+
+    assert.equal(match.addPlayer("local", 0, "blue"), "blue");
+    assert.equal(match.addPlayer("bot-one", 0, "red"), "red");
+    assert.equal(match.addPlayer("bot-two", 0, "red"), "red");
+    assert.equal(match.getPlayerTeam("bot-two"), "red");
+    assert.equal(match.getState(0).phase, "countdown");
+  });
+
+  void it("rejects capacities outside supported limits", () => {
+    assert.throws(() => new TeamDeathmatch(1), RangeError);
+    assert.throws(() => new TeamDeathmatch(21), RangeError);
+  });
+
   void it("cancels the countdown if a team becomes empty", () => {
     const match = new TeamDeathmatch();
     match.addPlayer("one", 0);

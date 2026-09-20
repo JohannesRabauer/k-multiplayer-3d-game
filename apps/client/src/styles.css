@@ -78,6 +78,31 @@ body {
   margin-top: 1.5rem;
 }
 
+.bot-picker {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 0.85rem;
+  color: rgb(255 255 255 / 82%);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.bot-picker select {
+  min-width: 6.5rem;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgb(87 199 255 / 60%);
+  border-radius: 0.65rem;
+  background: #172955;
+  color: #ffffff;
+  font: inherit;
+}
+
 .entry-actions[hidden],
 .entry-menu[hidden],
 .account-conflict[hidden],

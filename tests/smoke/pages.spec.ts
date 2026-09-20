@@ -10,13 +10,18 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
   await expect(page.locator("#entry-screen")).toBeVisible();
   await expect(page.locator("#offline-training")).toBeVisible();
   await expect(page.locator("#game-shell")).toBeHidden();
+  await page.locator("#bot-count").selectOption("8");
   await page.locator("#offline-training").click();
 
+  await expect(page.locator("#game-shell")).toHaveAttribute(
+    "data-bot-count",
+    "8"
+  );
   await expect(page.locator("#game-canvas")).toBeVisible();
   await expect(page.locator("#movement-joystick")).toBeVisible();
   await expect(page.locator("#aim-joystick")).toBeVisible();
   await expect(page.locator("#status-message")).toHaveText(
-    "Foundation build ready"
+    "8 training bots ready"
   );
   await expect(page.locator("#match-state")).toContainText("MATCH STARTS IN");
   await expect(page.locator("#blue-score")).toHaveText("0");
@@ -27,6 +32,15 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
   await page.locator("#leave-training").click();
   await expect(page.locator("#entry-screen")).toBeVisible();
   await expect(page.locator("#game-shell")).toBeHidden();
+  await page.locator("#bot-count").selectOption("1");
+  await page.locator("#offline-training").click();
+  await expect(page.locator("#game-shell")).toHaveAttribute(
+    "data-bot-count",
+    "1"
+  );
+  await expect(page.locator("#status-message")).toHaveText(
+    "1 training bot ready"
+  );
 
   const manifestResponse = await request.get("./manifest.webmanifest");
   expect(manifestResponse.ok()).toBe(true);
