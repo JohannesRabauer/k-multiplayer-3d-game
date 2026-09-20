@@ -7,6 +7,7 @@
     "@babylonjs/core": "^9.27.1",
     "@babylonjs/loaders": "^9.27.1",
     "@scooter-shooter/game-config": "*",
+    "@scooter-shooter/protocol": "*",
     "@scooter-shooter/simulation": "*",
     "firebase": "^12.19.0"
   },
@@ -17,8 +18,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "prebuild": "npm run build --workspace @scooter-shooter/simulation",
-    "pretypecheck": "npm run build --workspace @scooter-shooter/simulation",
+    "prebuild": "npm run build --workspace @scooter-shooter/protocol && npm run build --workspace @scooter-shooter/simulation",
+    "pretypecheck": "npm run build --workspace @scooter-shooter/protocol && npm run build --workspace @scooter-shooter/simulation",
     "preview": "vite preview",
     "test": "node --test",
     "typecheck": "tsc --project tsconfig.json --noEmit"
