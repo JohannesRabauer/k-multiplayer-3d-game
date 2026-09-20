@@ -41,7 +41,7 @@ export function createGameServer(options: GameServerOptions): GameServer {
       }
 
       switch (request.url) {
-        case "/healthz":
+        case "/livez":
           sendJson(response, 200, { status: "ok" });
           return;
         case "/readyz":

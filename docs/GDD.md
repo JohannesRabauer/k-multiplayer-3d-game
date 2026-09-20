@@ -755,7 +755,7 @@ Two path-aware jobs deploy independently:
 3. Push the immutable image to Artifact Registry.
 4. Deploy a new Cloud Run revision with explicit CPU, memory, min/max instances,
    concurrency, timeout, region, runtime service account, and environment.
-5. Verify `/healthz` and `/version`.
+5. Verify `/livez` and `/version`.
 6. Keep the previous revision available for rollback.
 
 Database migrations, if introduced, run as an explicit backward-compatible job
@@ -891,7 +891,7 @@ cross-site behavior.
 
 ### 19.2 Health endpoints
 
-- `/healthz`: process is alive
+- `/livez`: process is alive
 - `/readyz`: service can accept new matches
 - `/version`: build SHA, protocol version, and configuration version
 

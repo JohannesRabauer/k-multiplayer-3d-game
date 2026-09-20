@@ -27,7 +27,7 @@ after(async () => {
 
 void describe("game server health endpoints", () => {
   void it("reports liveness", async () => {
-    const response = await fetch(`${baseUrl}/healthz`);
+    const response = await fetch(`${baseUrl}/livez`);
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { status: "ok" });
@@ -54,7 +54,7 @@ void describe("game server health endpoints", () => {
   });
 
   void it("rejects unsupported methods and routes", async () => {
-    const methodResponse = await fetch(`${baseUrl}/healthz`, {
+    const methodResponse = await fetch(`${baseUrl}/livez`, {
       method: "POST"
     });
     const routeResponse = await fetch(`${baseUrl}/missing`);

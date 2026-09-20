@@ -97,7 +97,7 @@ jobs:
           SERVICE_URL: ${{ steps.service.outputs.url }}
         run: |
           set -euo pipefail
-          for path in healthz readyz version; do
+          for path in livez readyz version; do
             curl \
               --fail \
               --retry 12 \
