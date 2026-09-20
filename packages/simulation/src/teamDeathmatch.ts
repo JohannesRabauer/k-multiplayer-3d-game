@@ -14,6 +14,7 @@ export interface TeamDeathmatchState {
 }
 
 export class TeamDeathmatch {
+  readonly #countdownMs: number;
   readonly #maximumPlayers: number;
   readonly #players = new Map<string, Team>();
   #blueScore = 0;
@@ -22,7 +23,10 @@ export class TeamDeathmatch {
   #redScore = 0;
   #winningTeam: Team | null = null;
 
-  constructor(maximumPlayers = DEFAULT_GAME_CONFIG.match.initialMaxPlayers) {
+  constructor(
+    maximumPlayers = DEFAULT_GAME_CONFIG.match.initialMaxPlayers,
+    countdownMs = DEFAULT_GAME_CONFIG.match.countdownMs
+  ) {
     if (
       !Number.isInteger(maximumPlayers) ||
       maximumPlayers < DEFAULT_GAME_CONFIG.match.minimumPlayers ||
@@ -30,7 +34,13 @@ export class TeamDeathmatch {
     ) {
       throw new RangeError("Maximum players must be within supported limits.");
     }
+    if (!Number.isInteger(countdownMs) || countdownMs <= 0) {
+      throw new RangeError(
+        "Countdown must be a positive number of milliseconds."
+      );
+    }
     this.#maximumPlayers = maximumPlayers;
+    this.#countdownMs = countdownMs;
   }
 
   addPlayer(playerId: string, nowMs: number, requestedTeam?: Team): Team {
@@ -188,6 +198,6 @@ export class TeamDeathmatch {
       return;
     }
     this.#phase = "countdown";
-    this.#deadlineMs = nowMs + DEFAULT_GAME_CONFIG.match.countdownMs;
+    this.#deadlineMs = nowMs + this.#countdownMs;
   }
 }

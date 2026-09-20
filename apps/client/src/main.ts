@@ -1,4 +1,5 @@
 import "@babylonjs/core/Engines/engine";
+import "@babylonjs/core/Collisions/collisionCoordinator";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import "./styles.css";
 
@@ -264,6 +265,13 @@ function createScene(engine: Engine, botCount: number): Scene {
   );
   scene.onBeforeRenderObservable.add(() => {
     combatController.update(performance.now());
+    gameShell.dataset.playerPosition = `${player.position.x.toFixed(2)},${player.position.z.toFixed(2)}`;
+    gameShell.dataset.botPositions = bots
+      .map(
+        (bot) =>
+          `${bot.mesh.position.x.toFixed(2)},${bot.mesh.position.z.toFixed(2)}`
+      )
+      .join(";");
     if (!combatController.isPlayerAlive()) {
       playerController.setMoveInput(0, 0);
       pistolController.setTriggerHeld(false);

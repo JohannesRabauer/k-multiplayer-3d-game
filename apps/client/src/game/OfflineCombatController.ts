@@ -48,7 +48,7 @@ export class OfflineCombatController {
     this.#playerMesh = playerMesh;
     this.#playerSpawnPosition = playerSpawnPosition.clone();
     this.#hud = hud;
-    this.#match = new TeamDeathmatch(bots.length + 1);
+    this.#match = new TeamDeathmatch(bots.length + 1, 3_000);
     this.#match.addPlayer("local-player", nowMs, "blue");
     this.#player = createPlayerCombatState("local-player", "blue", nowMs);
     this.#hud.health.textContent = String(this.#player.health);

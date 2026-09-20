@@ -69,6 +69,9 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
 test("tracks independent movement and aim pointer input", async ({ page }) => {
   await openTraining(page);
 
+  const initialPlayerPosition = await page
+    .locator("#game-shell")
+    .getAttribute("data-player-position");
   const movement = page.locator("#movement-joystick");
   const movementBounds = await movement.boundingBox();
   assertBounds(movementBounds);
@@ -86,6 +89,10 @@ test("tracks independent movement and aim pointer input", async ({ page }) => {
     "none"
   );
   await page.mouse.up();
+  await expect(page.locator("#game-shell")).not.toHaveAttribute(
+    "data-player-position",
+    initialPlayerPosition ?? ""
+  );
 
   const aim = page.locator("#aim-joystick");
   const aimBounds = await aim.boundingBox();
@@ -107,6 +114,27 @@ test("tracks independent movement and aim pointer input", async ({ page }) => {
   );
   await page.mouse.up();
   await expect(aim).toHaveAttribute("data-firing", "false");
+});
+
+test("runs a live bot match without runtime failures", async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on("pageerror", (error) => {
+    runtimeErrors.push(error.message);
+  });
+  await page.goto("./");
+  await page.locator("#bot-count").selectOption("1");
+  await page.locator("#offline-training").click();
+
+  const initialBotPosition = await page
+    .locator("#game-shell")
+    .getAttribute("data-bot-positions");
+  await expect(page.locator("#match-state")).toBeEmpty({ timeout: 5_000 });
+  await expect(page.locator("#game-shell")).not.toHaveAttribute(
+    "data-bot-positions",
+    initialBotPosition ?? "",
+    { timeout: 5_000 }
+  );
+  expect(runtimeErrors).toEqual([]);
 });
 
 test("requires landscape while gameplay controls are shown", async ({

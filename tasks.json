@@ -9,7 +9,7 @@
     "done": "Acceptance criteria were verified and evidence is recorded.",
     "blocked": "Cannot proceed without an external prerequisite; blockedReason must be present."
   },
-  "updatedAt": "2026-09-20T13:00:00+02:00",
+  "updatedAt": "2026-09-20T13:30:00+02:00",
   "tasks": [
     {
       "id": "planning-001",
@@ -460,7 +460,9 @@
         "apps/client/src/game/TrainingBotController.ts implements collision-aware chase/strafe movement, ranged attacks, and world-geometry line-of-sight checks.",
         "OfflineCombatController manages independent bot and player health, eliminations, team scoring, spawn protection, and respawns.",
         "The entry screen selects one through eight bots and Playwright verifies maximum selection plus scene teardown and restart with a changed count.",
-        "npm run validate and all 4 mobile Chromium smoke tests passed on 2026-09-20."
+        "A deployed playtest exposed a missing Babylon collision coordinator import that froze bot movement and the match countdown; the runtime registration is now explicit.",
+        "Passive combat, movement/fire, and bot-count restart sessions passed locally after the fix; offline countdown was reduced to three seconds.",
+        "npm run validate and all 5 deeper mobile Chromium gameplay tests passed on 2026-09-20."
       ]
     },
     {
