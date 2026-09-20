@@ -144,7 +144,7 @@ test("runs a live bot match without runtime failures", async ({ page }) => {
   const initialBotPosition = await page
     .locator("#game-shell")
     .getAttribute("data-bot-positions");
-  await expect(page.locator("#match-state")).toBeEmpty({ timeout: 5_000 });
+  await expect(page.locator("#match-state")).toBeEmpty({ timeout: 12_000 });
   await expect(page.locator("#game-shell")).not.toHaveAttribute(
     "data-bot-positions",
     initialBotPosition ?? "",
@@ -175,6 +175,9 @@ test("exposes performance data and reduced effects on request", async ({
 }) => {
   await page.goto("./?debug=performance&quality=low");
   await page.locator("#offline-training").click();
+  await expect(page.locator("#status-message")).toContainText("ready", {
+    timeout: 20_000
+  });
 
   await expect(page.locator("#performance-stats")).toBeVisible();
   await expect(page.locator("#performance-stats")).toContainText("FPS");

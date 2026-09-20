@@ -417,6 +417,9 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
       .join(";");
     const aimDirection = aimController.getAimDirection();
     gameShell.dataset.aimDirection = `${aimDirection.x.toFixed(2)},${aimDirection.z.toFixed(2)}`;
+    gameShell.dataset.botShotEffects = String(
+      botController.getActiveShotEffectCount()
+    );
     if (!combatController.isPlayerAlive()) {
       vehicleController.exitVehicle();
       playerController.setMoveInput(0, 0);

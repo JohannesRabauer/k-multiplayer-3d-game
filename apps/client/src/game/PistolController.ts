@@ -37,7 +37,7 @@ export class PistolController {
     this.#scene = scene;
     this.#root = new TransformNode("pistol-root", scene);
     this.#root.parent = player;
-    this.#root.position = new Vector3(0.48, 0.45, 0.45);
+    this.#root.position = new Vector3(0.3, 0.3, 0.26);
 
     const bodyMaterial = new StandardMaterial("pistol-body-material", scene);
     bodyMaterial.diffuseColor = Color3.FromHexString("#343a4a");
@@ -51,7 +51,7 @@ export class PistolController {
 
     const body = MeshBuilder.CreateBox(
       "pistol-body",
-      { width: 0.22, height: 0.24, depth: 0.75 },
+      { width: 0.09, height: 0.1, depth: 0.32 },
       scene
     );
     body.material = bodyMaterial;
@@ -59,30 +59,30 @@ export class PistolController {
 
     const grip = MeshBuilder.CreateBox(
       "pistol-grip",
-      { width: 0.18, height: 0.45, depth: 0.2 },
+      { width: 0.075, height: 0.19, depth: 0.085 },
       scene
     );
-    grip.position = new Vector3(0, -0.28, -0.18);
+    grip.position = new Vector3(0, -0.12, -0.08);
     grip.rotation.x = -0.25;
     grip.material = bodyMaterial;
     grip.parent = this.#root;
 
     this.#muzzleFlash = MeshBuilder.CreateSphere(
       "pistol-muzzle-flash",
-      { diameter: 0.22, segments: 6 },
+      { diameter: 0.1, segments: 6 },
       scene
     );
-    this.#muzzleFlash.position = new Vector3(0, 0, 0.48);
+    this.#muzzleFlash.position = new Vector3(0, 0, 0.2);
     this.#muzzleFlash.material = accentMaterial;
     this.#muzzleFlash.parent = this.#root;
     this.#muzzleFlash.setEnabled(false);
 
     this.#tracer = MeshBuilder.CreateCylinder(
       "pistol-tracer",
-      { diameter: 0.025, height: 4, tessellation: 6 },
+      { diameter: 0.045, height: 4, tessellation: 6 },
       scene
     );
-    this.#tracer.position = new Vector3(0, 0, 2.45);
+    this.#tracer.position = new Vector3(0, 0, 2.2);
     this.#tracer.rotation.x = Math.PI / 2;
     this.#tracer.material = accentMaterial;
     this.#tracer.parent = this.#root;
@@ -114,7 +114,7 @@ export class PistolController {
     if (nowMs >= this.#visualEffectEndsAtMs) {
       this.#muzzleFlash.setEnabled(false);
       this.#tracer.setEnabled(false);
-      this.#root.position.z = 0.45;
+      this.#root.position.z = 0.26;
     }
 
     if (this.#reloadingUntilMs > 0 && nowMs >= this.#reloadingUntilMs) {
@@ -149,7 +149,7 @@ export class PistolController {
     this.#visualEffectEndsAtMs = nowMs + 55;
     this.#muzzleFlash.setEnabled(true);
     this.#tracer.setEnabled(true);
-    this.#root.position.z = 0.32;
+    this.#root.position.z = 0.18;
     this.#options.onAmmoChanged(this.#ammo, config.magazineSize);
     this.#playShotSound();
 

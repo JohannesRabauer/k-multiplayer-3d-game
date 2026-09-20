@@ -6,6 +6,8 @@ import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 
+const VEHICLE_TURN_RATE_RADIANS_PER_SECOND = 3.4;
+
 export class LocalPlayerController {
   readonly #camera: ArcRotateCamera;
   readonly #keys = new Set<string>();
@@ -57,6 +59,9 @@ export class LocalPlayerController {
 
   enterVehicle(vehicle: AbstractMesh): void {
     this.#vehicle = vehicle;
+    // The player collider rides inside the vehicle; leaving it collidable makes
+    // the vehicle push against it and refuse to move.
+    this.#mesh.checkCollisions = false;
   }
 
   exitVehicle(): void {
@@ -69,7 +74,18 @@ export class LocalPlayerController {
       -Math.sin(this.#vehicle.rotation.y)
     );
     this.#mesh.position.copyFrom(this.#vehicle.position.add(right.scale(2.2)));
+    this.#mesh.position.x = Scalar.Clamp(
+      this.#mesh.position.x,
+      this.#minimum.x,
+      this.#maximum.x
+    );
+    this.#mesh.position.z = Scalar.Clamp(
+      this.#mesh.position.z,
+      this.#minimum.z,
+      this.#maximum.z
+    );
     this.#mesh.position.y = 1.2;
+    this.#mesh.checkCollisions = true;
     this.#vehicle = undefined;
   }
 
@@ -127,7 +143,17 @@ export class LocalPlayerController {
     if (movement.lengthSquared() > 0) {
       movement.normalize();
       if (this.#vehicle !== undefined) {
-        controlledMesh.rotation.y = Math.atan2(movement.x, movement.z);
+        const targetAngle = Math.atan2(movement.x, movement.z);
+        const delta = Math.atan2(
+          Math.sin(targetAngle - controlledMesh.rotation.y),
+          Math.cos(targetAngle - controlledMesh.rotation.y)
+        );
+        const maximumTurn = VEHICLE_TURN_RATE_RADIANS_PER_SECOND * deltaSeconds;
+        controlledMesh.rotation.y += Scalar.Clamp(
+          delta,
+          -maximumTurn,
+          maximumTurn
+        );
       }
     }
 
@@ -151,6 +177,7 @@ export class LocalPlayerController {
     );
     if (this.#vehicle !== undefined) {
       this.#mesh.position.x = controlledMesh.position.x;
+      this.#mesh.position.y = controlledMesh.position.y + 0.55;
       this.#mesh.position.z = controlledMesh.position.z;
     }
   }

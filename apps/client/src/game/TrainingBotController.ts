@@ -1,7 +1,13 @@
 import { Ray } from "@babylonjs/core/Culling/ray";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Scene } from "@babylonjs/core/scene";
+
+import { ShotEffects } from "./ShotEffects";
 
 export interface TrainingBot {
   readonly id: string;
@@ -11,16 +17,19 @@ export interface TrainingBot {
 const ATTACK_RANGE_METERS = 13;
 const ATTACK_INTERVAL_MS = 850;
 const BOT_SPEED_METERS_PER_SECOND = 3.2;
+const CHEST_HEIGHT_OFFSET = 0.3;
 const PREFERRED_DISTANCE_METERS = 6;
 
 export class TrainingBotController {
   readonly #bots: readonly TrainingBot[];
+  readonly #guns = new Map<string, Mesh>();
   readonly #maximum: Vector3;
   readonly #minimum: Vector3;
   readonly #onAttack: (botId: string, nowMs: number) => void;
   readonly #player: AbstractMesh;
   readonly #scene: Scene;
   readonly #nextAttackAtMs = new Map<string, number>();
+  readonly #shotEffects: ShotEffects;
   readonly #worldMeshes: ReadonlySet<AbstractMesh>;
 
   constructor(
@@ -39,11 +48,40 @@ export class TrainingBotController {
     this.#maximum = maximum;
     this.#worldMeshes = new Set(worldMeshes);
     this.#onAttack = onAttack;
+    this.#shotEffects = new ShotEffects(scene, "#ff6a5a", "bot");
+
+    const gunMaterial = new StandardMaterial("bot-gun-material", scene);
+    gunMaterial.diffuseColor = Color3.FromHexString("#2b2f3d");
+    gunMaterial.emissiveColor = Color3.FromHexString("#54121a");
+    for (const bot of bots) {
+      const gun = MeshBuilder.CreateBox(
+        `${bot.id}-gun`,
+        { width: 0.09, height: 0.1, depth: 0.34 },
+        scene
+      );
+      gun.material = gunMaterial;
+      gun.isPickable = false;
+      gun.checkCollisions = false;
+      gun.parent = bot.mesh;
+      gun.position = new Vector3(0.3, CHEST_HEIGHT_OFFSET, 0.42);
+      this.#guns.set(bot.id, gun);
+    }
+
     scene.onBeforeRenderObservable.add(this.#update);
   }
 
   dispose(): void {
     this.#scene.onBeforeRenderObservable.removeCallback(this.#update);
+    this.#shotEffects.dispose();
+    for (const gun of this.#guns.values()) {
+      gun.dispose();
+    }
+    this.#guns.clear();
+  }
+
+  /** Number of bot shot visuals currently on screen. */
+  getActiveShotEffectCount(): number {
+    return this.#shotEffects.getActiveCount();
   }
 
   readonly #update = (): void => {
@@ -100,10 +138,23 @@ export class TrainingBotController {
           bot.id,
           nowMs + ATTACK_INTERVAL_MS + index * 45
         );
+        this.#shotEffects.spawn(
+          this.#muzzlePosition(bot),
+          this.#player.position.add(new Vector3(0, CHEST_HEIGHT_OFFSET, 0))
+        );
         this.#onAttack(bot.id, nowMs);
       }
     });
   };
+
+  #muzzlePosition(bot: TrainingBot): Vector3 {
+    const gun = this.#guns.get(bot.id);
+    if (gun === undefined) {
+      return bot.mesh.position.add(new Vector3(0, CHEST_HEIGHT_OFFSET, 0));
+    }
+    gun.computeWorldMatrix(true);
+    return gun.getAbsolutePosition().clone();
+  }
 
   #hasLineOfSight(
     origin: Vector3,

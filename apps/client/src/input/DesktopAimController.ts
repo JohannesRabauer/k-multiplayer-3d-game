@@ -12,6 +12,8 @@ export class DesktopAimController {
   readonly #canvas: HTMLCanvasElement;
   readonly #player: AbstractMesh;
   readonly #scene: Scene;
+  #pointerX: number | null = null;
+  #pointerY: number | null = null;
 
   constructor(
     scene: Scene,
@@ -29,6 +31,7 @@ export class DesktopAimController {
     canvas.addEventListener("pointerdown", this.#onPointerDown);
     window.addEventListener("pointerup", this.#onPointerUp);
     canvas.addEventListener("contextmenu", this.#preventContextMenu);
+    scene.onBeforeRenderObservable.add(this.#refreshAim);
   }
 
   dispose(): void {
@@ -36,6 +39,7 @@ export class DesktopAimController {
     this.#canvas.removeEventListener("pointerdown", this.#onPointerDown);
     window.removeEventListener("pointerup", this.#onPointerUp);
     this.#canvas.removeEventListener("contextmenu", this.#preventContextMenu);
+    this.#scene.onBeforeRenderObservable.removeCallback(this.#refreshAim);
   }
 
   readonly #onPointerMove = (event: PointerEvent): void => {
@@ -43,14 +47,26 @@ export class DesktopAimController {
       return;
     }
     const bounds = this.#canvas.getBoundingClientRect();
-    const engine = this.#scene.getEngine();
-    const x =
-      ((event.clientX - bounds.left) / bounds.width) * engine.getRenderWidth();
-    const y =
-      ((event.clientY - bounds.top) / bounds.height) * engine.getRenderHeight();
+    this.#pointerX = event.clientX - bounds.left;
+    this.#pointerY = event.clientY - bounds.top;
+    this.#refreshAim();
+  };
+
+  /**
+   * Recomputed every frame so the aim keeps revolving around the player even
+   * while the player moves underneath a stationary cursor.
+   */
+  readonly #refreshAim = (): void => {
+    const pointerX = this.#pointerX;
+    const pointerY = this.#pointerY;
+    if (pointerX === null || pointerY === null) {
+      return;
+    }
+    // Babylon expects CSS pixels relative to the canvas; it applies the
+    // hardware scaling level itself.
     const ray = this.#scene.createPickingRay(
-      x,
-      y,
+      pointerX,
+      pointerY,
       Matrix.Identity(),
       this.#camera
     );
@@ -60,11 +76,14 @@ export class DesktopAimController {
     if (distance === null) {
       return;
     }
-    this.#aimController.setAimDirection(
-      ray.origin
-        .add(ray.direction.scale(distance))
-        .subtract(this.#player.position)
-    );
+    const aim = ray.origin
+      .add(ray.direction.scale(distance))
+      .subtract(this.#player.position);
+    aim.y = 0;
+    if (aim.lengthSquared() < 1e-4) {
+      return;
+    }
+    this.#aimController.setAimDirection(aim);
   };
 
   readonly #onPointerDown = (event: PointerEvent): void => {

@@ -198,11 +198,23 @@ touches do not steal movement or aiming.
 ### 5.3 Desktop controls
 
 - WASD or arrow keys move relative to the fixed camera.
-- The mouse aims on the arena's horizontal plane.
+- The mouse aims on the arena's horizontal plane. The aim direction is
+  recalculated every frame from the cursor's position on the canvas, so the aim
+  keeps revolving around the player while the player moves.
 - Holding the left mouse button fires.
-- `E` enters a nearby vehicle or exits the active vehicle.
+- `E` enters a nearby vehicle or exits the active vehicle. Vehicles steer
+  smoothly toward the input direction rather than snapping.
 
-### 5.4 Aim assistance
+### 5.4 Combat readability
+
+Every attack must be visible from the fixed top-down camera:
+
+- Bots carry a visible weapon and each shot renders a coloured tracer beam, a
+  muzzle flash at the barrel, and an impact marker on the target.
+- The player's weapon is scaled to the character model and uses the same
+  muzzle-flash and tracer language in the player's accent colour.
+
+### 5.5 Aim assistance
 
 Aim assistance is intentionally mild:
 
@@ -212,7 +224,7 @@ Aim assistance is intentionally mild:
 - It does not alter server hit geometry.
 - Strength is configurable and can be disabled.
 
-### 5.5 Camera
+### 5.6 Camera
 
 - Fixed elevated top-down perspective that follows the controlled player
 - No player-controlled orbit or zoom, keeping movement directions stable

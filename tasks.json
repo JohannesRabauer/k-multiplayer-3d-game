@@ -9,7 +9,7 @@
     "done": "Acceptance criteria were verified and evidence is recorded.",
     "blocked": "Cannot proceed without an external prerequisite; blockedReason must be present."
   },
-  "updatedAt": "2026-09-20T16:30:00+02:00",
+  "updatedAt": "2026-09-20",
   "tasks": [
     {
       "id": "planning-001",
@@ -876,6 +876,27 @@
         "Moderation, rate limits, originality safeguards, and a separate cost budget are verified before enablement."
       ],
       "evidence": []
+    },
+    {
+      "id": "m2-011",
+      "milestone": "offline-combat",
+      "title": "Fix playtest defects: visible enemy fire, mouse aim, vehicle driving, weapon scale",
+      "status": "done",
+      "dependsOn": ["m2-010"],
+      "acceptanceCriteria": [
+        "Bot attacks render a visible tracer, muzzle flash, impact marker, and a visible bot weapon.",
+        "Mouse aim uses canvas CSS pixels and is recomputed every frame so it revolves around the moving player.",
+        "Vehicles keep driving instead of colliding with the driver's own collider, and steer smoothly.",
+        "The player's pistol is scaled to the character model instead of being oversized."
+      ],
+      "evidence": [
+        "ShotEffects renders pooled tracer, muzzle flash, and impact meshes; TrainingBotController gives each bot a weapon and spawns an effect on every attack.",
+        "DesktopAimController now passes CSS-pixel pointer coordinates to createPickingRay (fixing the device-pixel-ratio double scaling) and refreshes aim on every frame.",
+        "LocalPlayerController disables the player collider while driving and lerps vehicle heading at 3.4 rad/s.",
+        "PistolController geometry and offsets reduced ~2.5x to match the 2.25 unit tall character.",
+        "npm run validate and 8/8 Playwright tests pass; desktop tests now assert >6 units of sustained vehicle travel, opposing aim vectors across the player, and non-zero bot shot effects on 2026-09-20.",
+        "Screenshot playtest confirms a visible red enemy beam hitting the driven car and a correctly sized pistol."
+      ]
     }
   ]
 }
