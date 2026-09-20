@@ -59,6 +59,29 @@ export const gameConfigSchema = z
         maximum: z.number().int().positive().max(10_000)
       })
       .strict(),
+    rounds: z
+      .object({
+        roundsToWin: z.number().int().positive().max(9),
+        roundDurationMs: millisecondsSchema,
+        warmupMs: millisecondsSchema,
+        intermissionMs: millisecondsSchema,
+        resultDurationMs: millisecondsSchema
+      })
+      .strict(),
+    bots: z
+      .object({
+        attackRangeMeters: z.number().positive().max(100),
+        accurateRangeMeters: z.number().positive().max(100),
+        closeRangeAccuracy: z.number().min(0).max(1),
+        longRangeAccuracy: z.number().min(0).max(1),
+        movingTargetAccuracyPenalty: z.number().min(0).max(1),
+        reactionTimeMs: millisecondsSchema,
+        attackIntervalMs: millisecondsSchema,
+        burstRecoveryMs: millisecondsSchema,
+        damage: z.number().int().positive().max(100),
+        missSpreadDegrees: z.number().positive().max(45)
+      })
+      .strict(),
     pistol: z
       .object({
         damage: z.number().int().positive(),
@@ -143,6 +166,22 @@ export const gameConfigSchema = z
         path: ["network", "snapshotRateHz"]
       });
     }
+
+    if (config.bots.accurateRangeMeters > config.bots.attackRangeMeters) {
+      context.addIssue({
+        code: "custom",
+        message: "bot accurateRangeMeters cannot exceed attackRangeMeters",
+        path: ["bots", "accurateRangeMeters"]
+      });
+    }
+
+    if (config.bots.longRangeAccuracy > config.bots.closeRangeAccuracy) {
+      context.addIssue({
+        code: "custom",
+        message: "bot longRangeAccuracy cannot exceed closeRangeAccuracy",
+        path: ["bots", "longRangeAccuracy"]
+      });
+    }
   });
 
 export type GameConfig = z.infer<typeof gameConfigSchema>;
@@ -181,6 +220,25 @@ export const DEFAULT_GAME_CONFIG: Readonly<GameConfig> = gameConfigSchema.parse(
     },
     health: {
       maximum: 100
+    },
+    rounds: {
+      roundsToWin: 3,
+      roundDurationMs: 90_000,
+      warmupMs: 4_000,
+      intermissionMs: 5_000,
+      resultDurationMs: 10_000
+    },
+    bots: {
+      attackRangeMeters: 11,
+      accurateRangeMeters: 4,
+      closeRangeAccuracy: 0.6,
+      longRangeAccuracy: 0.15,
+      movingTargetAccuracyPenalty: 0.2,
+      reactionTimeMs: 500,
+      attackIntervalMs: 950,
+      burstRecoveryMs: 1_800,
+      damage: 8,
+      missSpreadDegrees: 10
     },
     pistol: {
       damage: 25,

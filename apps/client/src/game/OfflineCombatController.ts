@@ -4,9 +4,9 @@ import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 import {
   applyDamage,
   createPlayerCombatState,
-  TeamDeathmatch,
-  tryRespawn,
-  type PlayerCombatState
+  RoundMatch,
+  type PlayerCombatState,
+  type RoundMatchState
 } from "@scooter-shooter/simulation";
 
 interface CombatHud {
@@ -26,17 +26,17 @@ export interface OfflineBotCombatant {
 }
 
 interface BotState extends OfflineBotCombatant {
-  readonly combat: PlayerCombatState;
+  combat: PlayerCombatState;
 }
 
 export class OfflineCombatController {
   readonly #bots = new Map<string, BotState>();
   readonly #hud: CombatHud;
-  readonly #match: TeamDeathmatch;
-  readonly #player: PlayerCombatState;
+  readonly #match: RoundMatch;
   readonly #playerMesh: AbstractMesh;
   readonly #playerSpawnPosition: Vector3;
   #feedbackExpiresAtMs = 0;
+  #player: PlayerCombatState;
 
   constructor(
     playerMesh: AbstractMesh,
@@ -48,13 +48,11 @@ export class OfflineCombatController {
     this.#playerMesh = playerMesh;
     this.#playerSpawnPosition = playerSpawnPosition.clone();
     this.#hud = hud;
-    this.#match = new TeamDeathmatch(bots.length + 1, 3_000);
-    this.#match.addPlayer("local-player", nowMs, "blue");
+    this.#match = new RoundMatch(nowMs);
     this.#player = createPlayerCombatState("local-player", "blue", nowMs);
     this.#hud.health.textContent = String(this.#player.health);
 
     for (const bot of bots) {
-      this.#match.addPlayer(bot.id, nowMs, "red");
       this.#bots.set(bot.id, {
         ...bot,
         combat: createPlayerCombatState(bot.id, "red", nowMs)
@@ -63,12 +61,14 @@ export class OfflineCombatController {
     this.update(nowMs);
   }
 
+  /** True only while the current round is live and damage may be dealt. */
+  isRoundLive(nowMs: number): boolean {
+    return this.#match.isLive(nowMs);
+  }
+
   registerTargetHit(targetId: string, nowMs: number): void {
-    if (
-      !this.#player.isAlive ||
-      this.#match.getState(nowMs).phase !== "in_progress"
-    ) {
-      this.#showFeedback("WAIT FOR START", "blocked", nowMs, 700);
+    if (!this.#match.isLive(nowMs) || !this.#player.isAlive) {
+      this.#showFeedback("HOLD FIRE", "blocked", nowMs, 600);
       return;
     }
 
@@ -90,13 +90,16 @@ export class OfflineCombatController {
       return;
     }
 
-    this.#match.recordElimination("local-player", targetId, nowMs);
     bot.mesh.setEnabled(false);
     this.#showFeedback("ELIMINATION", "elimination", nowMs, 900);
+    if (this.#countLivingBots() === 0) {
+      this.#match.endRound("blue", nowMs);
+      this.#showFeedback("ROUND WON", "elimination", nowMs, 1_500);
+    }
   }
 
-  registerBotHit(botId: string, nowMs: number): void {
-    if (this.#match.getState(nowMs).phase !== "in_progress") {
+  registerBotHit(botId: string, nowMs: number, damage: number): void {
+    if (!this.#match.isLive(nowMs)) {
       return;
     }
     const bot = this.#bots.get(botId);
@@ -104,7 +107,7 @@ export class OfflineCombatController {
       return;
     }
 
-    const result = applyDamage(bot.combat, this.#player, 10, nowMs);
+    const result = applyDamage(bot.combat, this.#player, damage, nowMs);
     if (!result.applied) {
       return;
     }
@@ -113,9 +116,9 @@ export class OfflineCombatController {
       return;
     }
 
-    this.#match.recordElimination(botId, "local-player", nowMs);
     this.#playerMesh.setEnabled(false);
-    this.#showFeedback("ELIMINATED", "blocked", nowMs, 900);
+    this.#showFeedback("ROUND LOST", "blocked", nowMs, 1_500);
+    this.#match.endRound("red", nowMs);
   }
 
   isPlayerAlive(): boolean {
@@ -124,26 +127,15 @@ export class OfflineCombatController {
 
   update(nowMs: number): void {
     this.#match.update(nowMs);
-
-    for (const bot of this.#bots.values()) {
-      if (tryRespawn(bot.combat, nowMs)) {
-        bot.mesh.position.copyFrom(bot.spawnPosition);
-        bot.mesh.setEnabled(true);
-        this.#showFeedback("BOT RESPAWNED", "respawn", nowMs, 700);
-      }
-    }
-    if (tryRespawn(this.#player, nowMs)) {
-      this.#playerMesh.position.copyFrom(this.#playerSpawnPosition);
-      this.#playerMesh.setEnabled(true);
-      this.#hud.health.textContent = String(this.#player.health);
-      this.#showFeedback("RESPAWNED", "respawn", nowMs, 700);
+    if (this.#match.consumeRoundReset()) {
+      this.#resetCombatants(nowMs);
     }
 
     const state = this.#match.getState(nowMs);
-    this.#hud.blueScore.textContent = String(state.blueScore);
-    this.#hud.redScore.textContent = String(state.redScore);
-    this.#renderMatchState(state.phase, state.remainingMs, state.winningTeam);
-    this.#renderRespawn(nowMs);
+    this.#hud.blueScore.textContent = String(state.blueRoundWins);
+    this.#hud.redScore.textContent = String(state.redRoundWins);
+    this.#renderMatchState(state);
+    this.#renderRoundNotice(state);
 
     if (this.#feedbackExpiresAtMs !== 0 && nowMs >= this.#feedbackExpiresAtMs) {
       this.#hud.feedback.textContent = "";
@@ -152,42 +144,72 @@ export class OfflineCombatController {
     }
   }
 
-  #renderMatchState(
-    phase: ReturnType<TeamDeathmatch["getState"]>["phase"],
-    remainingMs: number,
-    winningTeam: ReturnType<TeamDeathmatch["getState"]>["winningTeam"]
-  ): void {
-    this.#hud.matchState.dataset.phase = phase;
-    if (phase === "waiting_for_players") {
-      this.#hud.matchState.textContent = "WAITING FOR PLAYERS";
-    } else if (phase === "countdown") {
-      this.#hud.matchState.textContent = `MATCH STARTS IN ${String(Math.ceil(remainingMs / 1_000))}`;
-    } else if (phase === "ended") {
-      this.#hud.matchState.textContent =
-        winningTeam === null
-          ? "DRAW"
-          : `${winningTeam.toUpperCase()} TEAM WINS`;
-    } else if (phase === "resetting") {
-      this.#hud.matchState.textContent = "RESETTING MATCH";
+  #resetCombatants(nowMs: number): void {
+    this.#player = createPlayerCombatState("local-player", "blue", nowMs);
+    this.#playerMesh.position.copyFrom(this.#playerSpawnPosition);
+    this.#playerMesh.setEnabled(true);
+    this.#hud.health.textContent = String(this.#player.health);
+
+    for (const bot of this.#bots.values()) {
+      bot.combat = createPlayerCombatState(bot.id, "red", nowMs);
+      bot.mesh.position.copyFrom(bot.spawnPosition);
+      bot.mesh.setEnabled(true);
+    }
+  }
+
+  #countLivingBots(): number {
+    let count = 0;
+    for (const bot of this.#bots.values()) {
+      if (bot.combat.isAlive) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  #renderMatchState(state: RoundMatchState): void {
+    const { matchState } = this.#hud;
+    matchState.dataset.phase = state.phase;
+    matchState.dataset.round = String(state.roundNumber);
+
+    if (state.phase === "warmup" || state.phase === "intermission") {
+      matchState.textContent = `ROUND ${String(state.roundNumber)} IN ${String(
+        Math.ceil(state.remainingMs / 1_000)
+      )}`;
+    } else if (state.phase === "round_ended") {
+      matchState.textContent =
+        state.lastRoundWinner === "draw"
+          ? "ROUND DRAW"
+          : state.lastRoundWinner === "blue"
+            ? "ROUND WON"
+            : "ROUND LOST";
+    } else if (state.phase === "match_ended") {
+      matchState.textContent =
+        state.matchWinner === "blue" ? "MATCH WON" : "MATCH LOST";
     } else {
-      this.#hud.matchState.textContent = "";
+      matchState.textContent = "";
     }
 
-    const remainingSeconds = Math.ceil(remainingMs / 1_000);
+    const remainingSeconds = Math.ceil(state.remainingMs / 1_000);
     const minutes = Math.floor(remainingSeconds / 60);
     const seconds = remainingSeconds % 60;
     this.#hud.timer.textContent = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
     this.#hud.timer.dateTime = `PT${String(remainingSeconds)}S`;
   }
 
-  #renderRespawn(nowMs: number): void {
-    if (this.#player.respawnAtMs === undefined) {
-      this.#hud.respawn.hidden = true;
+  #renderRoundNotice(state: RoundMatchState): void {
+    // There are no mid-round respawns, so this slot explains why the player is
+    // waiting instead of counting down to a respawn.
+    if (state.phase === "in_progress") {
+      this.#hud.respawn.hidden = this.#player.isAlive;
+      this.#hud.respawn.textContent = "ELIMINATED - WAITING FOR NEXT ROUND";
       return;
     }
 
     this.#hud.respawn.hidden = false;
-    this.#hud.respawn.textContent = `RESPAWNING IN ${String(Math.ceil((this.#player.respawnAtMs - nowMs) / 1_000))}`;
+    this.#hud.respawn.textContent = `ROUND ${String(state.roundNumber)} - FIRST TO ${String(
+      this.#match.getRoundsToWin()
+    )}`;
   }
 
   #showFeedback(

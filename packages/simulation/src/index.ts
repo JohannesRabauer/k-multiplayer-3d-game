@@ -6,6 +6,20 @@ export {
   type TeamDeathmatchState
 } from "./teamDeathmatch.js";
 
+export {
+  RoundMatch,
+  type RoundMatchOptions,
+  type RoundMatchState,
+  type RoundOutcome,
+  type RoundPhase
+} from "./roundMatch.js";
+
+export {
+  computeBotHitChance,
+  getBotShotDamage,
+  type BotShotContext
+} from "./botCombat.js";
+
 export type Team = "blue" | "red";
 
 export interface SpawnTransform {

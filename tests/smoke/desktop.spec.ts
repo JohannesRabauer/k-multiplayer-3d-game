@@ -96,6 +96,44 @@ test("renders visible bot shot effects when bots attack", async ({ page }) => {
     .toBeGreaterThan(0);
 });
 
+test("runs rounds with a frozen warmup instead of endless respawns", async ({
+  page
+}) => {
+  test.setTimeout(120_000);
+  await openTraining(page);
+  const matchState = page.locator("#match-state");
+  const gameShell = page.locator("#game-shell");
+
+  // Round 1 opens frozen so nobody can be shot at their spawn point.
+  await expect(matchState).toHaveAttribute("data-phase", "warmup");
+  await expect(matchState).toContainText("ROUND 1");
+  await expect(gameShell).toHaveAttribute("data-round-live", "false");
+
+  await expect(matchState).toHaveAttribute("data-phase", "in_progress", {
+    timeout: 15_000
+  });
+  await expect(gameShell).toHaveAttribute("data-round-live", "true");
+  await expect(matchState).toHaveAttribute("data-round", "1");
+});
+
+test("bots miss often enough to be beatable", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openTraining(page);
+  const gameShell = page.locator("#game-shell");
+
+  await expect
+    .poll(
+      async () =>
+        Number((await gameShell.getAttribute("data-bot-shots-fired")) ?? "0"),
+      { timeout: 90_000 }
+    )
+    .toBeGreaterThan(8);
+
+  const fired = Number(await gameShell.getAttribute("data-bot-shots-fired"));
+  const hit = Number(await gameShell.getAttribute("data-bot-shots-hit"));
+  expect(hit).toBeLessThan(fired);
+});
+
 async function openTraining(page: Page): Promise<void> {
   await page.goto("./");
   await page.locator("#offline-training").click();

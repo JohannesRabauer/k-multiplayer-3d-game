@@ -293,6 +293,59 @@ Respawn restores a full magazine.
 - A short spawn-protection window prevents immediate damage but ends when the
   player fires.
 
+### 6.6 Offline training rounds
+
+Offline training runs as a best-of-five round match (first side to three round
+wins) rather than a continuous free-for-all. This removes the spawn-camping
+failure mode where eliminated players respawn into waiting opponents.
+
+| Property         | Initial tuning value |
+| ---------------- | -------------------: |
+| Rounds to win    |                    3 |
+| Round duration   |                 90 s |
+| Warmup per round |                  4 s |
+| Intermission     |                  5 s |
+| Result screen    |                 10 s |
+
+Round flow:
+
+1. **Warmup** — every combatant is teleported to its spawn at full health and
+   bots hold fire. No damage can be dealt.
+2. **In progress** — the round is live.
+3. **Round ended** — the round is awarded when one side is wiped out, or scored
+   as a draw if the round timer expires.
+4. **Intermission** — a short break, then the next round warmup.
+
+There are no mid-round respawns. An eliminated combatant stays out until the
+next round begins, so a losing side can never be farmed at its spawn point.
+
+### 6.7 Bot fairness
+
+Training bots are deliberately beatable and must never feel like aimbots.
+
+| Property                  | Initial tuning value |
+| ------------------------- | -------------------: |
+| Engagement range          |                 11 m |
+| Fully accurate range      |                  4 m |
+| Accuracy at close range   |                  60% |
+| Accuracy at maximum range |                  15% |
+| Moving-target penalty     |        -20% absolute |
+| Reaction time             |               500 ms |
+| Shot interval             |               950 ms |
+| Recovery between bursts   |                1.8 s |
+| Damage per hit            |                 8 HP |
+
+Rules:
+
+- Bots cannot damage anything beyond their engagement range.
+- Accuracy falls off linearly from the accurate range to the maximum range, and
+  a moving player is harder to hit, so repositioning is rewarded.
+- A bot must hold unobstructed line of sight for its full reaction time before
+  its first shot. Breaking line of sight resets the timer.
+- Bots fire in three-shot bursts and then recover, giving the player openings.
+- Every shot is rendered, including misses, which visibly deflect past the
+  player rather than silently disappearing.
+
 ## 7. Map and visual direction
 
 ### 7.1 First map: Blocktown

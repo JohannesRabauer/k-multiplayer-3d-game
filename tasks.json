@@ -897,6 +897,27 @@
         "npm run validate and 8/8 Playwright tests pass; desktop tests now assert >6 units of sustained vehicle travel, opposing aim vectors across the player, and non-zero bot shot effects on 2026-09-20.",
         "Screenshot playtest confirms a visible red enemy beam hitting the driven car and a correctly sized pistol."
       ]
+    },
+    {
+      "id": "m2-012",
+      "milestone": "offline-combat",
+      "title": "Make bots fair and run offline training as a round match",
+      "status": "done",
+      "dependsOn": ["m2-011"],
+      "acceptanceCriteria": [
+        "Bots have a limited engagement range and distance-based accuracy instead of guaranteed hits at any reach.",
+        "Bots need a reaction delay with unobstructed line of sight before firing, and missed shots are visibly rendered.",
+        "Offline training runs as a best-of-five round match with a frozen warmup, no mid-round respawns, and a full reset every round.",
+        "Eliminated combatants stay out until the next round, so no side can be farmed at its spawn point."
+      ],
+      "evidence": [
+        "New game-config bots block: 11 m engagement range, 60 percent accuracy at 4 m falling to 15 percent at maximum range, 20 point moving-target penalty, 500 ms reaction time, three-shot bursts with 1.8 s recovery, and 8 HP per hit.",
+        "New simulation modules RoundMatch and computeBotHitChance carry the rules, covered by 15 unit tests (27 simulation tests pass).",
+        "OfflineCombatController drives warmup, in_progress, round_ended, intermission, and match_ended phases and resets every combatant at round start instead of respawning mid-round.",
+        "TrainingBotController holds fire outside a live round, requires line of sight for the full reaction time, rolls per-shot accuracy, and renders deflected tracers for misses.",
+        "10/10 Playwright tests pass, including new cases for the frozen warmup and for bots missing shots.",
+        "150 s playtest on 2026-09-20 recorded rounds 1-3 cycling warmup to in_progress to round_ended to intermission to match_ended, with 40 of 83 bot shots hitting a stationary player."
+      ]
     }
   ]
 }

@@ -6,6 +6,11 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Scene } from "@babylonjs/core/scene";
+import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
+import {
+  computeBotHitChance,
+  getBotShotDamage
+} from "@scooter-shooter/simulation";
 
 import { ShotEffects } from "./ShotEffects";
 
@@ -14,23 +19,39 @@ export interface TrainingBot {
   readonly mesh: AbstractMesh;
 }
 
-const ATTACK_RANGE_METERS = 13;
-const ATTACK_INTERVAL_MS = 850;
+export interface TrainingBotControllerOptions {
+  readonly canEngage: (nowMs: number) => boolean;
+  readonly onAttack: (botId: string, nowMs: number, damage: number) => void;
+}
+
+interface BotAim {
+  acquiredAtMs: number | undefined;
+  nextAttackAtMs: number;
+  shotsInBurst: number;
+}
+
+const BOT_CONFIG = DEFAULT_GAME_CONFIG.bots;
 const BOT_SPEED_METERS_PER_SECOND = 3.2;
 const CHEST_HEIGHT_OFFSET = 0.3;
+const MOVING_TARGET_THRESHOLD = 0.8;
 const PREFERRED_DISTANCE_METERS = 6;
+const SHOTS_PER_BURST = 3;
 
 export class TrainingBotController {
+  readonly #aim = new Map<string, BotAim>();
   readonly #bots: readonly TrainingBot[];
+  readonly #canEngage: (nowMs: number) => boolean;
   readonly #guns = new Map<string, Mesh>();
   readonly #maximum: Vector3;
   readonly #minimum: Vector3;
-  readonly #onAttack: (botId: string, nowMs: number) => void;
+  readonly #onAttack: (botId: string, nowMs: number, damage: number) => void;
   readonly #player: AbstractMesh;
+  readonly #previousPlayerPosition: Vector3;
   readonly #scene: Scene;
-  readonly #nextAttackAtMs = new Map<string, number>();
   readonly #shotEffects: ShotEffects;
   readonly #worldMeshes: ReadonlySet<AbstractMesh>;
+  #shotsFired = 0;
+  #shotsHit = 0;
 
   constructor(
     scene: Scene,
@@ -39,15 +60,17 @@ export class TrainingBotController {
     minimum: Vector3,
     maximum: Vector3,
     worldMeshes: readonly AbstractMesh[],
-    onAttack: (botId: string, nowMs: number) => void
+    options: TrainingBotControllerOptions
   ) {
     this.#scene = scene;
     this.#bots = bots;
     this.#player = player;
+    this.#previousPlayerPosition = player.position.clone();
     this.#minimum = minimum;
     this.#maximum = maximum;
     this.#worldMeshes = new Set(worldMeshes);
-    this.#onAttack = onAttack;
+    this.#canEngage = options.canEngage;
+    this.#onAttack = options.onAttack;
     this.#shotEffects = new ShotEffects(scene, "#ff6a5a", "bot");
 
     const gunMaterial = new StandardMaterial("bot-gun-material", scene);
@@ -65,6 +88,11 @@ export class TrainingBotController {
       gun.parent = bot.mesh;
       gun.position = new Vector3(0.3, CHEST_HEIGHT_OFFSET, 0.42);
       this.#guns.set(bot.id, gun);
+      this.#aim.set(bot.id, {
+        acquiredAtMs: undefined,
+        nextAttackAtMs: 0,
+        shotsInBurst: 0
+      });
     }
 
     scene.onBeforeRenderObservable.add(this.#update);
@@ -84,8 +112,20 @@ export class TrainingBotController {
     return this.#shotEffects.getActiveCount();
   }
 
+  /** Observed hit rate across the session, used by smoke telemetry. */
+  getAccuracyTelemetry(): { fired: number; hit: number } {
+    return { fired: this.#shotsFired, hit: this.#shotsHit };
+  }
+
   readonly #update = (): void => {
-    if (!this.#player.isEnabled()) {
+    const nowMs = performance.now();
+    const isEngagementAllowed = this.#canEngage(nowMs);
+    if (!isEngagementAllowed || !this.#player.isEnabled()) {
+      // Freeze the squad between rounds so nobody stakes out a spawn point.
+      for (const state of this.#aim.values()) {
+        state.acquiredAtMs = undefined;
+      }
+      this.#previousPlayerPosition.copyFrom(this.#player.position);
       return;
     }
 
@@ -93,7 +133,14 @@ export class TrainingBotController {
       this.#scene.getEngine().getDeltaTime() / 1_000,
       0.05
     );
-    const nowMs = performance.now();
+    const playerSpeed =
+      deltaSeconds > 0
+        ? Vector3.Distance(
+            this.#player.position,
+            this.#previousPlayerPosition
+          ) / deltaSeconds
+        : 0;
+    this.#previousPlayerPosition.copyFrom(this.#player.position);
 
     this.#bots.forEach((bot, index) => {
       if (!bot.mesh.isEnabled()) {
@@ -128,24 +175,100 @@ export class TrainingBotController {
         );
       }
 
-      const nextAttackAtMs = this.#nextAttackAtMs.get(bot.id) ?? 0;
-      if (
-        distance <= ATTACK_RANGE_METERS &&
-        nowMs >= nextAttackAtMs &&
-        this.#hasLineOfSight(bot.mesh.position, toPlayer, distance)
-      ) {
-        this.#nextAttackAtMs.set(
-          bot.id,
-          nowMs + ATTACK_INTERVAL_MS + index * 45
-        );
-        this.#shotEffects.spawn(
-          this.#muzzlePosition(bot),
-          this.#player.position.add(new Vector3(0, CHEST_HEIGHT_OFFSET, 0))
-        );
-        this.#onAttack(bot.id, nowMs);
-      }
+      this.#updateEngagement(
+        bot,
+        index,
+        distance,
+        toPlayer,
+        playerSpeed,
+        nowMs
+      );
     });
   };
+
+  #updateEngagement(
+    bot: TrainingBot,
+    index: number,
+    distance: number,
+    toPlayer: Vector3,
+    playerSpeed: number,
+    nowMs: number
+  ): void {
+    const state = this.#aim.get(bot.id);
+    if (state === undefined) {
+      return;
+    }
+
+    const hasTarget =
+      distance <= BOT_CONFIG.attackRangeMeters &&
+      this.#hasLineOfSight(bot.mesh.position, toPlayer, distance);
+    if (!hasTarget) {
+      // Losing sight resets the aim, so bots must re-acquire before firing.
+      state.acquiredAtMs = undefined;
+      return;
+    }
+
+    state.acquiredAtMs ??= nowMs;
+    if (nowMs - state.acquiredAtMs < BOT_CONFIG.reactionTimeMs) {
+      return;
+    }
+    if (nowMs < state.nextAttackAtMs) {
+      return;
+    }
+
+    state.shotsInBurst += 1;
+    const isBurstOver = state.shotsInBurst >= SHOTS_PER_BURST;
+    state.nextAttackAtMs =
+      nowMs +
+      (isBurstOver ? BOT_CONFIG.burstRecoveryMs : BOT_CONFIG.attackIntervalMs) +
+      index * 45;
+    if (isBurstOver) {
+      state.shotsInBurst = 0;
+    }
+
+    const playerChest = this.#player.position.add(
+      new Vector3(0, CHEST_HEIGHT_OFFSET, 0)
+    );
+    const hitChance = computeBotHitChance({
+      distanceMeters: distance,
+      isTargetMoving: playerSpeed > MOVING_TARGET_THRESHOLD
+    });
+    const isHit = Math.random() < hitChance;
+    this.#shotsFired += 1;
+
+    this.#shotEffects.spawn(
+      this.#muzzlePosition(bot),
+      isHit ? playerChest : this.#missPoint(bot.mesh.position, playerChest)
+    );
+
+    if (isHit) {
+      this.#shotsHit += 1;
+      this.#onAttack(bot.id, nowMs, getBotShotDamage());
+    }
+  }
+
+  /** Deflects a missed shot so the player can see the near miss fly past. */
+  #missPoint(origin: Vector3, target: Vector3): Vector3 {
+    const delta = target.subtract(origin);
+    const distance = delta.length();
+    if (distance < 0.05) {
+      return target;
+    }
+    const angle =
+      ((Math.random() < 0.5 ? -1 : 1) *
+        (BOT_CONFIG.missSpreadDegrees * (0.4 + Math.random() * 0.6)) *
+        Math.PI) /
+      180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return origin.add(
+      new Vector3(
+        delta.x * cos - delta.z * sin,
+        delta.y,
+        delta.x * sin + delta.z * cos
+      )
+    );
+  }
 
   #muzzlePosition(bot: TrainingBot): Vector3 {
     const gun = this.#guns.get(bot.id);

@@ -402,12 +402,16 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
     map.playAreaMinimum,
     map.playAreaMaximum,
     map.collisionMeshes,
-    (botId, nowMs) => {
-      combatController.registerBotHit(botId, nowMs);
+    {
+      canEngage: (nowMs) => combatController.isRoundLive(nowMs),
+      onAttack: (botId, nowMs, damage) => {
+        combatController.registerBotHit(botId, nowMs, damage);
+      }
     }
   );
   scene.onBeforeRenderObservable.add(() => {
-    combatController.update(performance.now());
+    const nowMs = performance.now();
+    combatController.update(nowMs);
     gameShell.dataset.playerPosition = `${player.position.x.toFixed(2)},${player.position.z.toFixed(2)}`;
     gameShell.dataset.botPositions = bots
       .map(
@@ -420,6 +424,10 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
     gameShell.dataset.botShotEffects = String(
       botController.getActiveShotEffectCount()
     );
+    const accuracy = botController.getAccuracyTelemetry();
+    gameShell.dataset.botShotsFired = String(accuracy.fired);
+    gameShell.dataset.botShotsHit = String(accuracy.hit);
+    gameShell.dataset.roundLive = String(combatController.isRoundLive(nowMs));
     if (!combatController.isPlayerAlive()) {
       vehicleController.exitVehicle();
       playerController.setMoveInput(0, 0);
