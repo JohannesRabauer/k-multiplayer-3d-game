@@ -681,7 +681,8 @@
       "evidence": [
         "tests/smoke/multiplayer.spec.ts drives two browser contexts against a real server: the host opens a room, the guest joins by code, each sees the other's avatar, and host movement propagates to the guest.",
         "An unknown room code is rejected with a readable message instead of entering the arena.",
-        "11 server unit tests and 11 Playwright tests pass."
+        "11 server unit tests and 11 Playwright tests pass.",
+        "Production playtest: two browser contexts signed in as Firebase guests on https://johannesrabauer.github.io/k-multiplayer-3d-game/, the host opened room 2Y2T95 over wss to Cloud Run, the guest joined by code, and both reported one remote player."
       ]
     },
     {
