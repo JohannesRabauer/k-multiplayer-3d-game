@@ -13,6 +13,13 @@ import { Scene } from "@babylonjs/core/scene";
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 import { registerSW } from "virtual:pwa-register";
 
+import {
+  FirebaseAuthController,
+  getAuthErrorMessage,
+  isAccountConflict,
+  readFirebaseOptions,
+  type AuthSession
+} from "./auth/FirebaseAuthController";
 import { AimController } from "./game/AimController";
 import { createBlocktown } from "./game/createBlocktown";
 import { LocalPlayerController } from "./game/LocalPlayerController";
@@ -47,6 +54,14 @@ function requireTimeElement(id: string): HTMLTimeElement {
   return element;
 }
 
+function requireButtonElement(id: string): HTMLButtonElement {
+  const element = requireHtmlElement(id);
+  if (!(element instanceof HTMLButtonElement)) {
+    throw new TypeError(`#${id} must be a button element.`);
+  }
+  return element;
+}
+
 const canvasElement = requireHtmlElement("game-canvas");
 if (!(canvasElement instanceof HTMLCanvasElement)) {
   throw new TypeError("#game-canvas must be a canvas element.");
@@ -66,6 +81,26 @@ const combatFeedbackElement = requireHtmlElement("combat-feedback");
 const matchStateElement = requireHtmlElement("match-state");
 const respawnStatusElement = requireHtmlElement("respawn-status");
 const matchTimerElement = requireTimeElement("match-timer");
+const entryScreen = requireHtmlElement("entry-screen");
+const gameShell = requireHtmlElement("game-shell");
+const signedOutActions = requireHtmlElement("signed-out-actions");
+const signedInMenu = requireHtmlElement("signed-in-menu");
+const playerIdentity = requireHtmlElement("player-identity");
+const identityKind = requireHtmlElement("identity-kind");
+const accountConflict = requireHtmlElement("account-conflict");
+const authMessage = requireOutputElement("auth-message");
+const guestSignInButton = requireButtonElement("guest-sign-in");
+const googleSignInButton = requireButtonElement("google-sign-in");
+const linkGoogleButton = requireButtonElement("link-google");
+const confirmAccountSwitchButton = requireButtonElement(
+  "confirm-account-switch"
+);
+const signOutButton = requireButtonElement("sign-out");
+const openTrainingButton = requireButtonElement("open-training");
+const offlineTrainingButton = requireButtonElement("offline-training");
+const leaveTrainingButton = requireButtonElement("leave-training");
+
+let stopGame: (() => void) | undefined;
 
 function showCompatibilityFailure(message: string): void {
   canvas.hidden = true;
@@ -192,14 +227,21 @@ function createScene(engine: Engine): Scene {
   return scene;
 }
 
-function start(): void {
+function startGame(): void {
+  if (stopGame !== undefined) {
+    return;
+  }
   if (!Engine.isSupported()) {
+    entryScreen.hidden = true;
+    gameShell.hidden = false;
     showCompatibilityFailure(
       "This device does not provide the WebGL support required to play."
     );
     return;
   }
 
+  entryScreen.hidden = true;
+  gameShell.hidden = false;
   const engine = new Engine(canvas, true, {
     adaptToDeviceRatio: true,
     antialias: true,
@@ -217,20 +259,134 @@ function start(): void {
     scene.render();
   });
 
-  window.addEventListener("resize", () => {
+  const resizeEngine = (): void => {
     engine.resize();
+  };
+  window.addEventListener("resize", resizeEngine);
+  stopGame = () => {
+    window.removeEventListener("resize", resizeEngine);
+    engine.stopRenderLoop();
+    engine.dispose();
+    gameShell.hidden = true;
+    entryScreen.hidden = false;
+    stopGame = undefined;
+  };
+}
+
+function renderSession(session: AuthSession | null): void {
+  accountConflict.hidden = true;
+  signedOutActions.hidden = session !== null;
+  signedInMenu.hidden = session === null;
+  if (session === null) {
+    authMessage.textContent = "Choose how to continue.";
+    return;
+  }
+
+  playerIdentity.textContent = session.displayName;
+  identityKind.textContent = session.isAnonymous
+    ? "Guest profile"
+    : "Google account";
+  linkGoogleButton.hidden = !session.isAnonymous;
+  authMessage.textContent = session.isAnonymous
+    ? "Guest progress stays on this device until you link Google."
+    : "Your player identity is ready.";
+}
+
+function setAuthBusy(busy: boolean): void {
+  for (const button of [
+    guestSignInButton,
+    googleSignInButton,
+    linkGoogleButton,
+    confirmAccountSwitchButton,
+    signOutButton
+  ]) {
+    button.disabled = busy;
+  }
+}
+
+async function initializeEntryFlow(): Promise<void> {
+  openTrainingButton.addEventListener("click", startGame);
+  offlineTrainingButton.addEventListener("click", startGame);
+  leaveTrainingButton.addEventListener("click", () => {
+    stopGame?.();
+  });
+
+  const firebaseOptions = readFirebaseOptions(import.meta.env);
+  if (firebaseOptions === null) {
+    signedOutActions.hidden = true;
+    authMessage.textContent =
+      "Firebase sign-in is unavailable in this local build. Offline training is still available.";
+    return;
+  }
+
+  const authController = new FirebaseAuthController(firebaseOptions);
+  try {
+    await authController.initialize(renderSession);
+  } catch (error: unknown) {
+    signedOutActions.hidden = true;
+    authMessage.textContent = getAuthErrorMessage(error);
+    return;
+  }
+
+  const runAuthAction = async (
+    action: () => Promise<void>,
+    pendingMessage: string
+  ): Promise<void> => {
+    setAuthBusy(true);
+    accountConflict.hidden = true;
+    authMessage.textContent = pendingMessage;
+    try {
+      await action();
+    } catch (error: unknown) {
+      accountConflict.hidden = !isAccountConflict(error);
+      authMessage.textContent = getAuthErrorMessage(error);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  guestSignInButton.addEventListener("click", () => {
+    void runAuthAction(
+      () => authController.continueAsGuest(),
+      "Creating guest profile…"
+    );
+  });
+  googleSignInButton.addEventListener("click", () => {
+    void runAuthAction(
+      () => authController.continueWithGoogle(),
+      "Opening Google sign-in…"
+    );
+  });
+  linkGoogleButton.addEventListener("click", () => {
+    void runAuthAction(
+      () => authController.continueWithGoogle(),
+      "Linking Google without replacing guest progress…"
+    );
+  });
+  confirmAccountSwitchButton.addEventListener("click", () => {
+    void runAuthAction(
+      () => authController.switchToExistingGoogleAccount(),
+      "Switching to the existing Google profile…"
+    );
+  });
+  signOutButton.addEventListener("click", () => {
+    void runAuthAction(() => authController.signOut(), "Signing out…");
   });
 }
 
 registerSW({
   onNeedRefresh() {
-    statusMessage.textContent =
-      "A new version is ready. Reload outside an active match.";
-    statusPanel.classList.remove("status-panel--ready");
+    const message = "A new version is ready. Reload outside an active match.";
+    if (stopGame === undefined) {
+      authMessage.textContent = message;
+    } else {
+      statusMessage.textContent = message;
+      statusPanel.classList.remove("status-panel--ready");
+    }
   },
   onOfflineReady() {
     statusPanel.dataset.offlineReady = "true";
   }
 });
 
-start();
+void initializeEntryFlow();

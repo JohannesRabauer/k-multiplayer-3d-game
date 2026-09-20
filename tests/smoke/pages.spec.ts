@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 test("loads the 3D PWA from its GitHub Pages base path", async ({
   page,
@@ -7,6 +7,11 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
   await page.goto("./");
 
   await expect(page).toHaveTitle("scooter-shooter");
+  await expect(page.locator("#entry-screen")).toBeVisible();
+  await expect(page.locator("#offline-training")).toBeVisible();
+  await expect(page.locator("#game-shell")).toBeHidden();
+  await page.locator("#offline-training").click();
+
   await expect(page.locator("#game-canvas")).toBeVisible();
   await expect(page.locator("#movement-joystick")).toBeVisible();
   await expect(page.locator("#aim-joystick")).toBeVisible();
@@ -19,6 +24,9 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
   await expect(page.locator("#health-value")).toHaveText("100");
   await expect(page.locator("#combat-feedback")).toBeAttached();
   await expect(page.locator("#respawn-status")).toBeHidden();
+  await page.locator("#leave-training").click();
+  await expect(page.locator("#entry-screen")).toBeVisible();
+  await expect(page.locator("#game-shell")).toBeHidden();
 
   const manifestResponse = await request.get("./manifest.webmanifest");
   expect(manifestResponse.ok()).toBe(true);
@@ -45,7 +53,7 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
 });
 
 test("tracks independent movement and aim pointer input", async ({ page }) => {
-  await page.goto("./");
+  await openTraining(page);
 
   const movement = page.locator("#movement-joystick");
   const movementBounds = await movement.boundingBox();
@@ -93,6 +101,9 @@ test("requires landscape while gameplay controls are shown", async ({
   await page.setViewportSize({ width: 412, height: 915 });
   await page.goto("./");
 
+  await expect(page.locator("#entry-screen")).toBeVisible();
+  await expect(page.locator("#orientation-overlay")).toBeHidden();
+  await page.locator("#offline-training").click();
   await expect(page.locator("#orientation-overlay")).toBeVisible();
   await expect(page.locator("#game-controls")).toBeHidden();
 
@@ -105,6 +116,7 @@ test("exposes performance data and reduced effects on request", async ({
   page
 }) => {
   await page.goto("./?debug=performance&quality=low");
+  await page.locator("#offline-training").click();
 
   await expect(page.locator("#performance-stats")).toBeVisible();
   await expect(page.locator("#performance-stats")).toContainText("FPS");
@@ -113,6 +125,12 @@ test("exposes performance data and reduced effects on request", async ({
     "true"
   );
 });
+
+async function openTraining(page: Page): Promise<void> {
+  await page.goto("./");
+  await page.locator("#offline-training").click();
+  await expect(page.locator("#game-shell")).toBeVisible();
+}
 
 function assertBounds(
   bounds: { height: number; width: number; x: number; y: number } | null

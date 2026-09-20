@@ -449,14 +449,17 @@
       "id": "m3-001",
       "milestone": "two-player-multiplayer",
       "title": "Configure Firebase guest and Google authentication",
-      "status": "pending",
+      "status": "in_progress",
       "dependsOn": ["m0-009"],
       "acceptanceCriteria": [
         "Guests receive anonymous identities.",
         "Anonymous identities can link to Google without silently losing progress.",
         "The server verifies Firebase ID tokens."
       ],
-      "evidence": []
+      "evidence": [
+        "Client entry screen supports Firebase anonymous sign-in, Google sign-in, anonymous-to-Google linking, explicit account-conflict confirmation, sign-out, and persistent local sessions.",
+        "GitHub Pages build receives Firebase public web configuration from the github-pages environment; Playwright verifies login-first startup, portrait entry, explicit offline training, and return-to-menu behavior."
+      ]
     },
     {
       "id": "m3-002",

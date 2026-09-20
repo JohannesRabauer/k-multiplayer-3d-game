@@ -6,7 +6,8 @@
   "dependencies": {
     "@babylonjs/core": "^9.27.1",
     "@scooter-shooter/game-config": "*",
-    "@scooter-shooter/simulation": "*"
+    "@scooter-shooter/simulation": "*",
+    "firebase": "^12.19.0"
   },
   "devDependencies": {
     "vite": "^7.3.6",

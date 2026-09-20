@@ -15,80 +15,144 @@
   </head>
   <body>
     <main id="app" aria-live="polite">
-      <canvas id="game-canvas" aria-label="scooter-shooter game view"></canvas>
-      <section id="status-panel" class="status-panel">
-        <p class="eyebrow">mobile multiplayer prototype</p>
-        <h1>scooter-shooter</h1>
-        <p id="status-message">Loading 3D engine...</p>
+      <section id="entry-screen" class="entry-screen">
+        <div class="entry-card">
+          <p class="eyebrow">mobile arena shooter</p>
+          <h1>scooter-shooter</h1>
+          <p class="entry-card__intro">
+            Sign in to keep one stable player identity across devices.
+          </p>
+          <div id="signed-out-actions" class="entry-actions">
+            <button id="guest-sign-in" class="button button--primary">
+              Continue as guest
+            </button>
+            <button id="google-sign-in" class="button button--secondary">
+              Continue with Google
+            </button>
+          </div>
+          <div id="signed-in-menu" class="entry-menu" hidden>
+            <p class="identity-label">Signed in as</p>
+            <strong id="player-identity">Player</strong>
+            <span id="identity-kind" class="identity-kind"></span>
+            <button id="open-training" class="button button--primary">
+              Open training arena
+            </button>
+            <button id="link-google" class="button button--secondary" hidden>
+              Link Google account
+            </button>
+            <button id="sign-out" class="button button--quiet">Sign out</button>
+          </div>
+          <div id="account-conflict" class="account-conflict" hidden>
+            <p>
+              Switching uses the existing Google profile. The current guest
+              profile is not overwritten.
+            </p>
+            <button id="confirm-account-switch" class="button button--danger">
+              Switch to existing Google profile
+            </button>
+          </div>
+          <output id="auth-message" class="auth-message" aria-live="polite">
+            Checking saved session…
+          </output>
+          <button id="offline-training" class="button button--quiet">
+            Preview offline training without signing in
+          </button>
+          <p class="online-note">
+            Online Quick Play will unlock when the multiplayer connection is
+            ready.
+          </p>
+        </div>
       </section>
-      <section
-        id="game-controls"
-        class="game-controls"
-        aria-label="Game controls"
-      >
-        <header class="match-score" aria-label="Match status">
-          <output class="match-score__team match-score__team--blue">
-            <span aria-hidden="true">◆</span>
-            <span>BLUE</span>
-            <strong id="blue-score">0</strong>
+      <section id="game-shell" class="game-shell" hidden>
+        <canvas
+          id="game-canvas"
+          aria-label="scooter-shooter game view"
+        ></canvas>
+        <section id="status-panel" class="status-panel">
+          <p class="eyebrow">offline training</p>
+          <h1>scooter-shooter</h1>
+          <p id="status-message">Loading 3D engine...</p>
+          <button id="leave-training" class="button button--small">
+            Return to menu
+          </button>
+        </section>
+        <section
+          id="game-controls"
+          class="game-controls"
+          aria-label="Game controls"
+        >
+          <header class="match-score" aria-label="Match status">
+            <output class="match-score__team match-score__team--blue">
+              <span aria-hidden="true">◆</span>
+              <span>BLUE</span>
+              <strong id="blue-score">0</strong>
+            </output>
+            <time id="match-timer" class="match-score__timer" datetime="PT4M">
+              04:00
+            </time>
+            <output class="match-score__team match-score__team--red">
+              <strong id="red-score">0</strong>
+              <span>RED</span>
+              <span aria-hidden="true">◆</span>
+            </output>
+          </header>
+          <div id="crosshair" class="crosshair" aria-hidden="true"></div>
+          <output
+            id="combat-feedback"
+            class="combat-feedback"
+            aria-live="assertive"
+          ></output>
+          <output id="match-state" class="match-state" aria-live="polite">
+            WAITING FOR PLAYERS
           </output>
-          <time id="match-timer" class="match-score__timer" datetime="PT4M">
-            04:00
-          </time>
-          <output class="match-score__team match-score__team--red">
-            <strong id="red-score">0</strong>
-            <span>RED</span>
-            <span aria-hidden="true">◆</span>
-          </output>
-        </header>
-        <div id="crosshair" class="crosshair" aria-hidden="true"></div>
+          <output
+            id="respawn-status"
+            class="respawn-status"
+            aria-live="polite"
+            hidden
+          ></output>
+          <div class="player-status" aria-label="Player status">
+            <output class="player-status__health" aria-label="Health">
+              <span aria-hidden="true">♥</span>
+              <strong id="health-value">100</strong>
+            </output>
+            <output class="player-status__ammo" aria-label="Ammunition">
+              <strong id="ammo-value">8</strong>
+              <span>/ 8</span>
+            </output>
+          </div>
+          <div
+            id="movement-joystick"
+            class="joystick joystick--movement"
+            aria-label="Movement joystick"
+            role="application"
+          >
+            <div class="joystick__knob"></div>
+          </div>
+          <div
+            id="aim-joystick"
+            class="joystick joystick--aim"
+            aria-label="Aim and fire joystick"
+            role="application"
+          >
+            <div class="joystick__knob"></div>
+          </div>
+        </section>
+        <aside
+          id="orientation-overlay"
+          class="orientation-overlay"
+          role="status"
+        >
+          <div class="orientation-overlay__phone" aria-hidden="true">↻</div>
+          <strong>Rotate your device</strong>
+          <span>Gameplay uses landscape mode.</span>
+        </aside>
         <output
-          id="combat-feedback"
-          class="combat-feedback"
-          aria-live="assertive"
-        ></output>
-        <output id="match-state" class="match-state" aria-live="polite">
-          WAITING FOR PLAYERS
-        </output>
-        <output
-          id="respawn-status"
-          class="respawn-status"
-          aria-live="polite"
+          id="performance-stats"
+          class="performance-stats"
           hidden
         ></output>
-        <div class="player-status" aria-label="Player status">
-          <output class="player-status__health" aria-label="Health">
-            <span aria-hidden="true">♥</span>
-            <strong id="health-value">100</strong>
-          </output>
-          <output class="player-status__ammo" aria-label="Ammunition">
-            <strong id="ammo-value">8</strong>
-            <span>/ 8</span>
-          </output>
-        </div>
-        <div
-          id="movement-joystick"
-          class="joystick joystick--movement"
-          aria-label="Movement joystick"
-          role="application"
-        >
-          <div class="joystick__knob"></div>
-        </div>
-        <div
-          id="aim-joystick"
-          class="joystick joystick--aim"
-          aria-label="Aim and fire joystick"
-          role="application"
-        >
-          <div class="joystick__knob"></div>
-        </div>
       </section>
-      <aside id="orientation-overlay" class="orientation-overlay" role="status">
-        <div class="orientation-overlay__phone" aria-hidden="true">↻</div>
-        <strong>Rotate your device</strong>
-        <span>Gameplay uses landscape mode.</span>
-      </aside>
-      <output id="performance-stats" class="performance-stats" hidden></output>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

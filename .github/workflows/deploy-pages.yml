@@ -25,6 +25,7 @@ jobs:
     name: Build Pages artifact
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: github-pages
 
     steps:
       - name: Check out repository
@@ -43,6 +44,14 @@ jobs:
         run: npm ci
 
       - name: Build production client
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          VITE_FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID:
+            ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
         run: npm run build --workspace @scooter-shooter/client
 
       - name: Upload Pages artifact
