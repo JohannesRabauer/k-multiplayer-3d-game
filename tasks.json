@@ -161,7 +161,7 @@
       "id": "m0-008",
       "milestone": "foundation",
       "title": "Add GitHub Pages deployment",
-      "status": "blocked",
+      "status": "done",
       "dependsOn": ["m0-005", "m0-007"],
       "acceptanceCriteria": [
         "A successful main-branch workflow deploys the client through the github-pages environment.",
@@ -170,9 +170,9 @@
       ],
       "evidence": [
         ".github/workflows/deploy-pages.yml",
-        "actionlint passed locally (2026-09-19)"
-      ],
-      "blockedReason": "The workflow cannot be executed and its public URL smoke-tested until these changes reach main and GitHub Pages is enabled with GitHub Actions as its source."
+        "GitHub Actions deployment and its public URL/manifest smoke test passed in run 35490328708 on 2026-09-20.",
+        "Public PWA verified at https://johannesrabauer.github.io/k-multiplayer-3d-game/ on 2026-09-20."
+      ]
     },
     {
       "id": "m0-009",
