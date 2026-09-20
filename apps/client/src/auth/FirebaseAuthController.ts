@@ -62,6 +62,15 @@ export class FirebaseAuthController {
   async signOut(): Promise<void> {
     await signOut(this.#auth);
   }
+
+  /** Returns a fresh ID token for the game server handshake. */
+  async getIdToken(): Promise<string> {
+    const currentUser = this.#auth.currentUser;
+    if (currentUser === null) {
+      throw new Error("Sign in before joining an online match.");
+    }
+    return currentUser.getIdToken();
+  }
 }
 
 export function readFirebaseOptions(

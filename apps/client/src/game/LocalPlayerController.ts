@@ -16,6 +16,7 @@ export class LocalPlayerController {
   readonly #minimum: Vector3;
   readonly #movementInput = Vector2.Zero();
   readonly #observer: Observer<Scene>;
+  readonly #worldMoveDirection = Vector2.Zero();
   #vehicle: AbstractMesh | undefined;
 
   constructor(
@@ -55,6 +56,15 @@ export class LocalPlayerController {
       input.normalize();
     }
     this.#movementInput.copyFrom(input);
+  }
+
+  /**
+   * The world-space direction the player is currently moving, which is what an
+   * online match sends upstream. The server has no camera, so camera-relative
+   * input has to be resolved here first.
+   */
+  getWorldMoveDirection(): { readonly x: number; readonly z: number } {
+    return { x: this.#worldMoveDirection.x, z: this.#worldMoveDirection.y };
   }
 
   enterVehicle(vehicle: AbstractMesh): void {
@@ -142,6 +152,7 @@ export class LocalPlayerController {
     const controlledMesh = this.#vehicle ?? this.#mesh;
     if (movement.lengthSquared() > 0) {
       movement.normalize();
+      this.#worldMoveDirection.set(movement.x, movement.z);
       if (this.#vehicle !== undefined) {
         const targetAngle = Math.atan2(movement.x, movement.z);
         const delta = Math.atan2(
@@ -155,6 +166,8 @@ export class LocalPlayerController {
           maximumTurn
         );
       }
+    } else {
+      this.#worldMoveDirection.setAll(0);
     }
 
     const distance =

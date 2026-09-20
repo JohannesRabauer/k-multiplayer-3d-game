@@ -1,5 +1,7 @@
 import { PROTOCOL_VERSION } from "@scooter-shooter/protocol";
 
+import { FirebaseTokenVerifier } from "./auth.js";
+import { attachRealtimeGateway } from "./realtime.js";
 import { closeServer, createGameServer } from "./server.js";
 
 const DEFAULT_PORT = 8080;
@@ -25,6 +27,23 @@ const gameServer = createGameServer({
   protocolVersion: PROTOCOL_VERSION
 });
 
+// Signature checks are only ever skipped for local development, and the flag
+// has to be set deliberately. Deployed revisions always verify.
+const allowUnverifiedTokens = process.env.ALLOW_UNVERIFIED_TOKENS === "true";
+if (allowUnverifiedTokens) {
+  console.warn(
+    JSON.stringify({ event: "token_verification_disabled", scope: "local_dev" })
+  );
+}
+
+const realtime = attachRealtimeGateway(gameServer.httpServer, {
+  buildSha: process.env.BUILD_SHA ?? "development",
+  verifier: new FirebaseTokenVerifier({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    allowUnverifiedTokens
+  })
+});
+
 let shuttingDown = false;
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -43,6 +62,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   forceExitTimer.unref();
 
   try {
+    await realtime.close();
     await closeServer(gameServer.httpServer);
     clearTimeout(forceExitTimer);
     console.info(JSON.stringify({ event: "server_shutdown_completed" }));

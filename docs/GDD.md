@@ -409,6 +409,23 @@ Initially active:
 Vehicles are available in offline training. Multiplayer vehicle rules remain a
 future feature until server-authoritative vehicle simulation is implemented.
 
+### 8.1.1 Joining another player's game
+
+Players meet through **room codes**, not a matchmaking queue. This keeps the
+service at near-zero cost and lets two people play together on demand.
+
+- **Host an online game** opens a room and shows a six-character code drawn from
+  `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`. The visually confusable characters `0`,
+  `O`, `1`, and `I` are excluded so a code can be read aloud.
+- **Copy invite link** copies the page URL with `?join=CODE` appended. Opening
+  that link prefills the code so the guest only has to sign in and press Join.
+- **Join** accepts a typed code. Unknown codes are rejected with
+  `room_not_found` and the player stays in the menu.
+
+Rooms live in memory on a single Cloud Run instance (`--max-instances=1`), so a
+code always resolves to the process that owns it. Sharding rooms across
+instances is tracked as a later capacity task.
+
 ### 8.2 Match HUD
 
 - Top center: remaining time

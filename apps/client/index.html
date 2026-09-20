@@ -47,7 +47,43 @@
             <p class="identity-label">Signed in as</p>
             <strong id="player-identity">Player</strong>
             <span id="identity-kind" class="identity-kind"></span>
-            <button id="open-training" class="button button--primary">
+            <button id="host-game" class="button button--primary">
+              Host an online game
+            </button>
+            <div class="join-row">
+              <label class="join-row__label" for="join-code">Game code</label>
+              <input
+                id="join-code"
+                class="join-code-input"
+                type="text"
+                inputmode="latin"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+                maxlength="6"
+                placeholder="ABC123"
+                aria-describedby="online-message"
+              />
+              <button id="join-game" class="button button--secondary">
+                Join
+              </button>
+            </div>
+            <output
+              id="online-message"
+              class="online-message"
+              aria-live="polite"
+            ></output>
+            <div id="room-share" class="room-share" hidden>
+              <p class="room-share__label">Share this code</p>
+              <strong id="room-code" class="room-share__code">------</strong>
+              <button id="copy-invite" class="button button--quiet">
+                Copy invite link
+              </button>
+              <p id="room-roster" class="room-share__roster">
+                Waiting for another player…
+              </p>
+            </div>
+            <button id="open-training" class="button button--secondary">
               Open training arena
             </button>
             <button id="link-google" class="button button--secondary" hidden>
@@ -71,8 +107,7 @@
             Preview offline training without signing in
           </button>
           <p class="online-note">
-            Online Quick Play will unlock when the multiplayer connection is
-            ready.
+            Sign in to host a game, then share the code so a friend can join.
           </p>
         </div>
       </section>

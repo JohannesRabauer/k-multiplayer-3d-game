@@ -55,6 +55,38 @@ const joinQuickPlaySchema = z
   })
   .strict();
 
+/**
+ * Room codes are the invite mechanism: short enough to read aloud, and drawn
+ * from an alphabet without the characters that are easy to confuse by sight.
+ */
+export const ROOM_CODE_LENGTH = 6 as const;
+export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" as const;
+
+export const roomCodeSchema = z
+  .string()
+  .length(ROOM_CODE_LENGTH)
+  .regex(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]+$/u);
+
+export function normalizeRoomCode(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/gu, "");
+}
+
+const createRoomSchema = z
+  .object({
+    type: z.literal("createRoom")
+  })
+  .strict();
+
+const joinWithCodeSchema = z
+  .object({
+    type: z.literal("joinWithCode"),
+    roomCode: roomCodeSchema
+  })
+  .strict();
+
 const inputBatchSchema = z
   .object({
     type: z.literal("inputBatch"),
@@ -88,6 +120,8 @@ const leaveMatchSchema = z
 export const clientMessageSchema = z.discriminatedUnion("type", [
   helloSchema,
   joinQuickPlaySchema,
+  createRoomSchema,
+  joinWithCodeSchema,
   inputBatchSchema,
   fireIntentSchema,
   heartbeatSchema,
@@ -103,14 +137,38 @@ const welcomeSchema = z
   })
   .strict();
 
+export const roomMemberSchema = z
+  .object({
+    playerId: identifierSchema,
+    displayName: z.string().min(1).max(64),
+    team: teamSchema
+  })
+  .strict();
+
 const joinAcceptedSchema = z
   .object({
     type: z.literal("joinAccepted"),
     playerId: identifierSchema,
     roomId: identifierSchema,
+    roomCode: roomCodeSchema,
     reconnectToken: z.string().min(32).max(512),
     team: teamSchema,
-    serverTick: sequenceSchema
+    serverTick: sequenceSchema,
+    members: z.array(roomMemberSchema).max(20)
+  })
+  .strict();
+
+const playerJoinedSchema = z
+  .object({
+    type: z.literal("playerJoined"),
+    member: roomMemberSchema
+  })
+  .strict();
+
+const playerLeftSchema = z
+  .object({
+    type: z.literal("playerLeft"),
+    playerId: identifierSchema
   })
   .strict();
 
@@ -121,6 +179,7 @@ const joinRejectedSchema = z
       "authentication_required",
       "client_update_required",
       "invalid_request",
+      "room_not_found",
       "room_unavailable",
       "server_full"
     ])
@@ -227,6 +286,8 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   welcomeSchema,
   joinAcceptedSchema,
   joinRejectedSchema,
+  playerJoinedSchema,
+  playerLeftSchema,
   snapshotSchema,
   shotResultSchema,
   damageSchema,
@@ -241,6 +302,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export type InputFrame = z.infer<typeof inputFrameSchema>;
 export type MatchPhase = z.infer<typeof matchPhaseSchema>;
 export type PlayerSnapshot = z.infer<typeof playerSnapshotSchema>;
+export type RoomMember = z.infer<typeof roomMemberSchema>;
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
 export type Team = z.infer<typeof teamSchema>;
 export type Vector2 = z.infer<typeof vector2Schema>;

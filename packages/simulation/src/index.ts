@@ -20,6 +20,22 @@ export {
   type BotShotContext
 } from "./botCombat.js";
 
+export {
+  ARENA_HALF_DEPTH,
+  ARENA_HALF_WIDTH,
+  ARENA_OBSTACLES,
+  BLUE_SPAWNS,
+  PLAYER_RADIUS,
+  RED_SPAWNS,
+  SHOT_HEIGHT,
+  getSpawn,
+  raycastCircle,
+  raycastObstacles,
+  resolveMovement,
+  type ArenaObstacle,
+  type ArenaSpawn
+} from "./arena.js";
+
 export type Team = "blue" | "red";
 
 export interface SpawnTransform {

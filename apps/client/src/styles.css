@@ -195,6 +195,82 @@ body {
   font-size: 0.72rem;
 }
 
+.join-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.join-row__label {
+  grid-column: 1 / -1;
+  color: #9fb4d4;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.join-code-input {
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgb(159 180 212 / 45%);
+  border-radius: 0.75rem;
+  background: rgb(8 16 34 / 80%);
+  color: #f3f7ff;
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.join-code-input:focus-visible {
+  outline: 2px solid #57c7ff;
+  outline-offset: 1px;
+}
+
+.online-message {
+  display: block;
+  min-height: 1.4rem;
+  color: #ffd657;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.room-share {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid rgb(87 199 255 / 45%);
+  border-radius: 0.85rem;
+  background: rgb(87 199 255 / 10%);
+  text-align: center;
+}
+
+.room-share__label {
+  margin: 0 0 0.35rem;
+  color: #9fb4d4;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.room-share__code {
+  display: block;
+  margin-bottom: 0.6rem;
+  color: #57c7ff;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.35em;
+  text-indent: 0.35em;
+}
+
+.room-share__roster {
+  margin: 0.5rem 0 0;
+  color: #9fb4d4;
+  font-size: 0.75rem;
+}
+
 .game-shell {
   position: fixed;
   inset: 0;

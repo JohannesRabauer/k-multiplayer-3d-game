@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const port = 4173;
+const gameServerPort = 8787;
 const basePath = "/k-multiplayer-3d-game/";
 
 export default defineConfig({
@@ -13,12 +14,26 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${String(port)}${basePath}`,
     trace: "on-first-retry"
   },
-  webServer: {
-    command: `node scripts/serve-pages-preview.mjs ${String(port)}`,
-    port,
-    reuseExistingServer: process.env.CI === undefined,
-    timeout: 30_000
-  },
+  webServer: [
+    {
+      command: `node scripts/serve-pages-preview.mjs ${String(port)}`,
+      port,
+      reuseExistingServer: process.env.CI === undefined,
+      timeout: 30_000
+    },
+    {
+      // Realtime server for the multiplayer smoke test. Unverified tokens are
+      // accepted so the preview build does not need Firebase credentials.
+      command: "node apps/server/dist/index.js",
+      port: gameServerPort,
+      env: {
+        PORT: String(gameServerPort),
+        ALLOW_UNVERIFIED_TOKENS: "true"
+      },
+      reuseExistingServer: process.env.CI === undefined,
+      timeout: 30_000
+    }
+  ],
   projects: [
     {
       name: "mobile-chromium",
@@ -35,6 +50,14 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 900 }
+      }
+    },
+    {
+      name: "multiplayer-chromium",
+      testMatch: "multiplayer.spec.ts",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 }
       }
     }
   ]

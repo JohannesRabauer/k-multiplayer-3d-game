@@ -30,7 +30,7 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
   await expect(page.locator("#aim-joystick")).toBeVisible();
   await expect(page.locator("#match-state")).toHaveAttribute(
     "data-phase",
-    /^(countdown|in_progress)$/
+    /^(warmup|countdown|in_progress)$/
   );
   await expect(page.locator("#blue-score")).toHaveText("0");
   await expect(page.locator("#red-score")).toHaveText("0");

@@ -32,13 +32,22 @@ import {
 import { LocalPlayerController } from "./game/LocalPlayerController";
 import { LocalHitscanResolver } from "./game/LocalHitscanResolver";
 import { OfflineCombatController } from "./game/OfflineCombatController";
+import { OnlineSessionController } from "./game/OnlineSessionController";
 import { PerformanceMonitor } from "./game/PerformanceMonitor";
 import { PistolController } from "./game/PistolController";
+import { ShotEffects } from "./game/ShotEffects";
 import { createTopDownCamera } from "./game/TopDownCamera";
 import { TrainingBotController } from "./game/TrainingBotController";
 import { VehicleController } from "./game/VehicleController";
 import { DesktopAimController } from "./input/DesktopAimController";
 import { VirtualJoystick } from "./input/VirtualJoystick";
+import {
+  NetworkClient,
+  NetworkError,
+  type ConnectionStatus
+} from "./net/NetworkClient";
+import { resolveServerUrl } from "./net/serverUrl";
+import type { ServerMessage } from "@scooter-shooter/protocol";
 
 function requireHtmlElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -76,6 +85,14 @@ function requireSelectElement(id: string): HTMLSelectElement {
   const element = requireHtmlElement(id);
   if (!(element instanceof HTMLSelectElement)) {
     throw new TypeError(`#${id} must be a select element.`);
+  }
+  return element;
+}
+
+function requireInputElement(id: string): HTMLInputElement {
+  const element = requireHtmlElement(id);
+  if (!(element instanceof HTMLInputElement)) {
+    throw new TypeError(`#${id} must be an input element.`);
   }
   return element;
 }
@@ -120,9 +137,19 @@ const offlineTrainingButton = requireButtonElement("offline-training");
 const leaveTrainingButton = requireButtonElement("leave-training");
 const vehicleActionButton = requireButtonElement("vehicle-action");
 const botCountSelect = requireSelectElement("bot-count");
+const hostGameButton = requireButtonElement("host-game");
+const joinGameButton = requireButtonElement("join-game");
+const copyInviteButton = requireButtonElement("copy-invite");
+const joinCodeInput = requireInputElement("join-code");
+const onlineMessage = requireOutputElement("online-message");
+const roomShare = requireHtmlElement("room-share");
+const roomCodeElement = requireHtmlElement("room-code");
+const roomRosterElement = requireHtmlElement("room-roster");
 
 let stopGame: (() => void) | undefined;
 let isGameStarting = false;
+let networkMessageSink: ((message: ServerMessage) => void) | undefined;
+let activeNetwork: NetworkClient | undefined;
 
 function showCompatibilityFailure(message: string): void {
   canvas.hidden = true;
@@ -130,7 +157,12 @@ function showCompatibilityFailure(message: string): void {
   statusMessage.textContent = message;
 }
 
-async function createScene(engine: Engine, botCount: number): Promise<Scene> {
+async function createScene(
+  engine: Engine,
+  botCount: number,
+  network?: NetworkClient
+): Promise<Scene> {
+  const isOnline = network !== undefined;
   const scene = new Scene(engine);
   scene.collisionsEnabled = true;
   scene.clearColor = new Color4(0.055, 0.1, 0.22, 1);
@@ -179,7 +211,7 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
     new Vector3(-4, 0.1, 7)
   ];
   const bots = botSpawnPositions
-    .slice(0, botCount)
+    .slice(0, isOnline ? 0 : botCount)
     .map((spawnPosition, index) => {
       const id = `training-bot-${String(index + 1)}`;
       const mesh = MeshBuilder.CreateCapsule(
@@ -301,6 +333,7 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
       addVehicleModel(scene, vehicle.mesh, vehicle.model, `${vehicle.id}-model`)
     )
   );
+  const lastMoveInput = { x: 0, z: 0 };
   const combatController = new OfflineCombatController(
     player,
     player.position,
@@ -344,6 +377,8 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
   const movementJoystick = new VirtualJoystick(movementJoystickElement, {
     deadZone: DEFAULT_GAME_CONFIG.movement.inputDeadZone,
     onInput: (x, y) => {
+      lastMoveInput.x = x;
+      lastMoveInput.z = y;
       playerController.setMoveInput(
         combatController.isPlayerAlive() ? x : 0,
         combatController.isPlayerAlive() ? y : 0
@@ -368,6 +403,15 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
       );
     },
     onShot: (origin, direction) => {
+      if (network !== undefined) {
+        network.sendFire(
+          network.takeInputSequence(),
+          { x: origin.x, y: origin.y, z: origin.z },
+          { x: direction.x, y: direction.y, z: direction.z }
+        );
+        crosshairElement.dataset.lastShotResult = "sent";
+        return;
+      }
       const result = hitscanResolver.resolve(origin, direction);
       crosshairElement.dataset.lastShotResult = result.kind;
       if (result.kind === "target") {
@@ -409,9 +453,51 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
       }
     }
   );
+  const onlineSession =
+    network === undefined
+      ? undefined
+      : new OnlineSessionController(
+          scene,
+          network,
+          player,
+          new ShotEffects(scene, "#ffd657", "online"),
+          {
+            blueScore: blueScoreElement,
+            feedback: combatFeedbackElement,
+            health: healthValueElement,
+            matchState: matchStateElement,
+            redScore: redScoreElement,
+            respawn: respawnStatusElement,
+            timer: matchTimerElement
+          },
+          {
+            getMovement: () => playerController.getWorldMoveDirection(),
+            getAimYaw: () => {
+              const aim = aimController.getAimDirection();
+              return Math.atan2(aim.x, aim.z);
+            }
+          }
+        );
+  if (onlineSession !== undefined && network !== undefined) {
+    networkMessageSink = (message) => {
+      onlineSession.handleMessage(message);
+    };
+  }
+
   scene.onBeforeRenderObservable.add(() => {
     const nowMs = performance.now();
-    combatController.update(nowMs);
+    if (onlineSession !== undefined) {
+      onlineSession.update(nowMs);
+      gameShell.dataset.onlineRemotePlayers = String(
+        onlineSession.remotePlayerCount
+      );
+      gameShell.dataset.onlineSnapshots = String(
+        onlineSession.snapshotsApplied
+      );
+      gameShell.dataset.onlinePhase = onlineSession.phase;
+    } else {
+      combatController.update(nowMs);
+    }
     gameShell.dataset.playerPosition = `${player.position.x.toFixed(2)},${player.position.z.toFixed(2)}`;
     gameShell.dataset.botPositions = bots
       .map(
@@ -431,13 +517,18 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
     gameShell.dataset.botShotsFired = String(accuracy.fired);
     gameShell.dataset.botShotsHit = String(accuracy.hit);
     gameShell.dataset.roundLive = String(combatController.isRoundLive(nowMs));
-    if (!combatController.isPlayerAlive()) {
+    const alive =
+      onlineSession === undefined
+        ? combatController.isPlayerAlive()
+        : onlineSession.isPlayerAlive;
+    if (!alive) {
       vehicleController.exitVehicle();
       playerController.setMoveInput(0, 0);
       pistolController.setTriggerHeld(false);
     }
   });
   scene.onDisposeObservable.addOnce(() => {
+    onlineSession?.dispose();
     performanceMonitor.dispose();
     botController.dispose();
     vehicleController.dispose(scene);
@@ -452,7 +543,7 @@ async function createScene(engine: Engine, botCount: number): Promise<Scene> {
   return scene;
 }
 
-async function startGame(): Promise<void> {
+async function startGame(network?: NetworkClient): Promise<void> {
   if (stopGame !== undefined || isGameStarting) {
     return;
   }
@@ -477,6 +568,7 @@ async function startGame(): Promise<void> {
       ? selectedBotCount
       : 3;
   gameShell.dataset.botCount = String(botCount);
+  gameShell.dataset.mode = network === undefined ? "offline" : "online";
   const engine = new Engine(canvas, true, {
     adaptToDeviceRatio: true,
     antialias: true,
@@ -488,7 +580,7 @@ async function startGame(): Promise<void> {
   statusMessage.textContent = "Loading characters, city, and vehicles…";
   let scene: Scene;
   try {
-    scene = await createScene(engine, botCount);
+    scene = await createScene(engine, botCount, network);
   } catch (error: unknown) {
     engine.dispose();
     showCompatibilityFailure(
@@ -500,7 +592,10 @@ async function startGame(): Promise<void> {
     return;
   }
 
-  statusMessage.textContent = `${String(botCount)} training ${botCount === 1 ? "bot" : "bots"} ready`;
+  statusMessage.textContent =
+    network === undefined
+      ? `${String(botCount)} training ${botCount === 1 ? "bot" : "bots"} ready`
+      : `Online match ready — code ${network.match?.roomCode ?? ""}`;
   statusPanel.classList.add("status-panel--ready");
   isGameStarting = false;
 
@@ -516,6 +611,8 @@ async function startGame(): Promise<void> {
     window.removeEventListener("resize", resizeEngine);
     engine.stopRenderLoop();
     engine.dispose();
+    networkMessageSink = undefined;
+    network?.disconnect();
     gameShell.hidden = true;
     entryScreen.hidden = false;
     stopGame = undefined;
@@ -553,6 +650,166 @@ function setAuthBusy(busy: boolean): void {
   }
 }
 
+function describeConnectionStatus(status: ConnectionStatus): string {
+  switch (status) {
+    case "connecting":
+      return "Contacting the game server…";
+    case "authenticating":
+      return "Signing in to the match…";
+    case "joining":
+      return "Joining the match…";
+    case "connected":
+      return "Connected.";
+    case "reconnecting":
+      return "Connection lost. Reconnecting…";
+    case "failed":
+      return "Disconnected from the match.";
+    default:
+      return "";
+  }
+}
+
+/**
+ * Builds an unsigned JWT for builds that have no Firebase config (local
+ * previews and end-to-end tests). A server only accepts these when it runs
+ * with `ALLOW_UNVERIFIED_TOKENS=true`, so it is never a production bypass.
+ */
+function createDevToken(): string {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const encode = (value: unknown): string =>
+    btoa(JSON.stringify(value))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const payload = {
+    sub: `dev-${suffix}`,
+    name: `Dev ${suffix.toUpperCase()}`,
+    iat: nowSeconds,
+    exp: nowSeconds + 3600,
+    firebase: { sign_in_provider: "anonymous" }
+  };
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.dev`;
+}
+
+/**
+ * Wires the host and join buttons. A room code is the whole invite mechanism:
+ * the host opens a room, reads out six characters, and the other player types
+ * them in. The shareable link carries the code so it can also just be sent.
+ */
+function registerOnlineHandlers(
+  authController: FirebaseAuthController | null
+): void {
+  const serverUrl = resolveServerUrl(import.meta.env, window.location.search);
+
+  if (serverUrl === undefined) {
+    hostGameButton.disabled = true;
+    joinGameButton.disabled = true;
+    joinCodeInput.disabled = true;
+    onlineMessage.textContent =
+      "Online play is not configured for this build. Training still works.";
+    return;
+  }
+
+  const createNetwork = (): NetworkClient =>
+    new NetworkClient({
+      serverUrl,
+      clientBuild: "web",
+      getAuthToken: () =>
+        authController === null
+          ? Promise.resolve(createDevToken())
+          : authController.getIdToken(),
+      onStatusChange: (status) => {
+        onlineMessage.textContent = describeConnectionStatus(status);
+      },
+      onMessage: (message) => {
+        if (message.type === "playerJoined") {
+          roomRosterElement.textContent = `${message.member.displayName} joined.`;
+        }
+        networkMessageSink?.(message);
+      }
+    });
+
+  const setOnlineBusy = (busy: boolean): void => {
+    hostGameButton.disabled = busy;
+    joinGameButton.disabled = busy;
+    joinCodeInput.disabled = busy;
+  };
+
+  const enterOnlineMatch = async (
+    action: (network: NetworkClient) => Promise<unknown>
+  ): Promise<void> => {
+    setOnlineBusy(true);
+    try {
+      const network = createNetwork();
+      activeNetwork = network;
+      await action(network);
+
+      const match = network.match;
+      if (match !== undefined) {
+        roomShare.hidden = false;
+        roomCodeElement.textContent = match.roomCode;
+        roomRosterElement.textContent =
+          match.members.length > 1
+            ? `${String(match.members.length)} players in this game.`
+            : "Waiting for another player…";
+      }
+      await startGame(network);
+    } catch (error: unknown) {
+      activeNetwork?.disconnect();
+      activeNetwork = undefined;
+      onlineMessage.textContent =
+        error instanceof NetworkError
+          ? error.message
+          : "Could not reach the game server.";
+    } finally {
+      setOnlineBusy(false);
+    }
+  };
+
+  hostGameButton.addEventListener("click", () => {
+    void enterOnlineMatch(async (network) => network.createRoom());
+  });
+
+  joinGameButton.addEventListener("click", () => {
+    const code = joinCodeInput.value;
+    void enterOnlineMatch(async (network) => network.joinRoom(code));
+  });
+
+  copyInviteButton.addEventListener("click", () => {
+    const code = roomCodeElement.textContent;
+    const link = new URL(window.location.href);
+    link.searchParams.set("join", code);
+    void navigator.clipboard
+      .writeText(link.toString())
+      .then(() => {
+        onlineMessage.textContent = "Invite link copied.";
+      })
+      .catch(() => {
+        onlineMessage.textContent = link.toString();
+      });
+  });
+
+  // An invite link prefills the code so the guest only has to press Join.
+  const invited = new URLSearchParams(window.location.search).get("join");
+  if (invited !== null && invited.length > 0) {
+    joinCodeInput.value = invited.toUpperCase();
+    onlineMessage.textContent =
+      "Sign in, then press Join to accept the invite.";
+  }
+
+  if (authController === null) {
+    // Without Firebase there is no sign-in step, so the online menu would stay
+    // hidden. Reveal just the match controls so a dev or preview build can
+    // still reach a server supplied via `?server=`.
+    signedInMenu.hidden = false;
+    playerIdentity.textContent = "Local dev player";
+    identityKind.textContent = "unverified";
+    linkGoogleButton.hidden = true;
+    signOutButton.hidden = true;
+  }
+}
+
 async function initializeEntryFlow(): Promise<void> {
   openTrainingButton.addEventListener("click", () => {
     void startGame();
@@ -565,14 +822,17 @@ async function initializeEntryFlow(): Promise<void> {
   });
 
   const firebaseOptions = readFirebaseOptions(import.meta.env);
-  if (firebaseOptions === null) {
+  const authController =
+    firebaseOptions === null
+      ? null
+      : new FirebaseAuthController(firebaseOptions);
+  registerOnlineHandlers(authController);
+  if (authController === null) {
     signedOutActions.hidden = true;
     authMessage.textContent =
       "Firebase sign-in is unavailable in this local build. Offline training is still available.";
     return;
   }
-
-  const authController = new FirebaseAuthController(firebaseOptions);
   try {
     await authController.initialize(renderSession);
   } catch (error: unknown) {

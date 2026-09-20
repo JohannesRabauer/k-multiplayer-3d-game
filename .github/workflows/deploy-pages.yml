@@ -52,6 +52,7 @@ jobs:
             ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+          VITE_GAME_SERVER_URL: ${{ vars.GAME_SERVER_URL }}
         run: npm run build --workspace @scooter-shooter/client
 
       - name: Upload Pages artifact

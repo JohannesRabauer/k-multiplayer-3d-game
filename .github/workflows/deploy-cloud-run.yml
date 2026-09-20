@@ -8,6 +8,8 @@ on:
       - ".github/workflows/deploy-cloud-run.yml"
       - "apps/server/**"
       - "packages/protocol/**"
+      - "packages/game-config/**"
+      - "packages/simulation/**"
       - "package-lock.json"
       - "package.json"
   workflow_dispatch:
@@ -76,7 +78,8 @@ jobs:
             --timeout=3600 \
             --min-instances=0 \
             --max-instances=1 \
-            --set-env-vars="BUILD_SHA=${GITHUB_SHA},ALLOWED_ORIGIN=https://johannesrabauer.github.io" \
+            --session-affinity \
+            --set-env-vars="BUILD_SHA=${GITHUB_SHA},ALLOWED_ORIGIN=https://johannesrabauer.github.io,FIREBASE_PROJECT_ID=${{ vars.FIREBASE_PROJECT_ID }}" \
             --quiet
 
       - name: Resolve service URL

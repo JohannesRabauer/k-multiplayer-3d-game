@@ -4,14 +4,20 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@scooter-shooter/protocol": "*"
+    "@scooter-shooter/game-config": "*",
+    "@scooter-shooter/protocol": "*",
+    "@scooter-shooter/simulation": "*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12"
   },
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "prebuild": "npm run build --workspace @scooter-shooter/protocol",
+    "prebuild": "npm run build --workspace @scooter-shooter/protocol && npm run build --workspace @scooter-shooter/game-config && npm run build --workspace @scooter-shooter/simulation",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test dist/server.test.js",
-    "pretypecheck": "npm run build --workspace @scooter-shooter/protocol",
+    "test": "npm run build && node --test dist/*.test.js",
+    "pretypecheck": "npm run build --workspace @scooter-shooter/protocol && npm run build --workspace @scooter-shooter/game-config && npm run build --workspace @scooter-shooter/simulation",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   }
 }

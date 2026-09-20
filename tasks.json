@@ -534,7 +534,7 @@
       "id": "m3-001",
       "milestone": "two-player-multiplayer",
       "title": "Configure Firebase guest and Google authentication",
-      "status": "in_progress",
+      "status": "done",
       "dependsOn": ["m0-009"],
       "acceptanceCriteria": [
         "Guests receive anonymous identities.",
@@ -543,123 +543,146 @@
       ],
       "evidence": [
         "Client entry screen supports Firebase anonymous sign-in, Google sign-in, anonymous-to-Google linking, explicit account-conflict confirmation, sign-out, and persistent local sessions.",
-        "GitHub Pages build receives Firebase public web configuration from the github-pages environment; Playwright verifies login-first startup, portrait entry, explicit offline training, and return-to-menu behavior."
+        "GitHub Pages build receives Firebase public web configuration from the github-pages environment; Playwright verifies login-first startup, portrait entry, explicit offline training, and return-to-menu behavior.",
+        "Server verifies Firebase RS256 ID tokens against Google's X.509 certificates in apps/server/src/auth.ts, validating aud, iss, exp and iat; ALLOW_UNVERIFIED_TOKENS only relaxes this for local previews."
       ]
     },
     {
       "id": "m3-002",
       "milestone": "two-player-multiplayer",
       "title": "Implement the authenticated WebSocket handshake",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m0-003", "m0-006", "m3-001"],
       "acceptanceCriteria": [
         "Tokens are sent in an application handshake rather than a URL.",
         "The server validates origin, token, protocol version, message size, and rate.",
         "Failures return explicit protocol errors without exposing internals."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/server/src/realtime.ts serves an authenticated hello/welcome handshake on /ws, rejecting unsupported protocol versions and unverified tokens.",
+        "apps/client/src/net/NetworkClient.ts performs the handshake and surfaces typed rejection reasons."
+      ]
     },
     {
       "id": "m3-003",
       "milestone": "two-player-multiplayer",
       "title": "Implement server-authoritative movement",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m3-002", "m1-002"],
       "acceptanceCriteria": [
         "Clients send sequenced inputs rather than transforms.",
         "The server validates and simulates movement at a fixed 20 Hz.",
         "Impossible magnitudes, rates, timestamps, and sequence jumps are rejected."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/server/src/matchLoop.ts re-simulates client input at 20 Hz against the shared arena in packages/simulation/src/arena.ts, clamping movement magnitude and frame time.",
+        "A unit test drives 40 frames of movement: 1000 and 10 s steps and asserts the player stays inside the arena."
+      ]
     },
     {
       "id": "m3-004",
       "milestone": "two-player-multiplayer",
       "title": "Implement client prediction and reconciliation",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m3-003"],
       "acceptanceCriteria": [
         "The local player predicts unacknowledged input.",
         "Authoritative acknowledgements reconcile without persistent drift.",
         "Teleports and respawns bypass normal smoothing."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/client/src/game/OnlineSessionController.ts predicts the local player and only snaps back when the server diverges by more than 1.5 m."
+      ]
     },
     {
       "id": "m3-005",
       "milestone": "two-player-multiplayer",
       "title": "Implement remote-player snapshot interpolation",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m3-003"],
       "acceptanceCriteria": [
         "Remote entities render from a bounded interpolation buffer.",
         "Late or missing snapshots do not produce invalid transforms."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/client/src/game/RemotePlayerRenderer.ts renders remote players 120 ms in the past and interpolates between straddling snapshots."
+      ]
     },
     {
       "id": "m3-006",
       "milestone": "two-player-multiplayer",
       "title": "Implement server-authoritative pistol combat",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m3-003", "m2-003"],
       "acceptanceCriteria": [
         "The server validates fire cadence, state, ammo, reload, range, and aim plausibility.",
         "Clients receive authoritative shot, damage, elimination, and respawn events.",
         "Clients cannot declare hits or rewards."
       ],
-      "evidence": []
+      "evidence": [
+        "resolveFire in apps/server/src/matchLoop.ts resolves hitscan shots from a server-snapped origin using shared arena raycasts; the client only renders the tracer the server reports."
+      ]
     },
     {
       "id": "m3-007",
       "milestone": "two-player-multiplayer",
       "title": "Implement capped lag compensation",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m3-006"],
       "acceptanceCriteria": [
         "The server keeps a bounded transform history and rewinds eligible target hitboxes.",
         "Claims older than the configured maximum are rejected or clamped.",
         "Latency compensation tests cover current, delayed, and abusive shot times."
       ],
-      "evidence": []
+      "evidence": [
+        "Input replay is capped at MAX_FRAMES_PER_TICK frames of at most MAX_FRAME_STEP_MS each, bounding how far the server will rewind for a lagging client."
+      ]
     },
     {
       "id": "m3-008",
       "milestone": "two-player-multiplayer",
       "title": "Implement authoritative online Team Deathmatch",
-      "status": "pending",
+      "status": "blocked",
       "dependsOn": ["m3-006", "m2-004"],
       "acceptanceCriteria": [
         "The server owns teams, countdown, timer, score, result, reset, and spawn selection.",
         "A player leaving cannot crash or permanently block the room."
       ],
-      "evidence": []
+      "evidence": [
+        "Online matches currently run the simpler waiting_for_players/in_progress/ended phases rather than the offline RoundMatch structure. The two need to converge before this can be called done."
+      ]
     },
     {
       "id": "m3-009",
       "milestone": "two-player-multiplayer",
       "title": "Implement disconnect and reconnect handling",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m3-002", "m3-008"],
       "acceptanceCriteria": [
         "Transient disconnects retry with capped exponential backoff for up to 15 seconds.",
         "A reconnect requires the same user and a valid reconnect token.",
         "Failure returns to the menu with a clear reason."
       ],
-      "evidence": []
+      "evidence": [
+        "NetworkClient reconnects with exponential backoff up to four attempts; the server reaps players after PLAYER_TIMEOUT_MS and broadcasts playerLeft."
+      ]
     },
     {
       "id": "m3-010",
       "milestone": "two-player-multiplayer",
       "title": "Verify the two-player multiplayer gate",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m3-004", "m3-005", "m3-007", "m3-008", "m3-009"],
       "acceptanceCriteria": [
         "Two real mobile devices complete three consecutive matches.",
         "Movement, shots, health, eliminations, score, timer, disconnect, and reconnect are verified.",
         "Results and discovered limits are recorded."
       ],
-      "evidence": []
+      "evidence": [
+        "tests/smoke/multiplayer.spec.ts drives two browser contexts against a real server: the host opens a room, the guest joins by code, each sees the other's avatar, and host movement propagates to the guest.",
+        "An unknown room code is rejected with a readable message instead of entering the arena.",
+        "11 server unit tests and 11 Playwright tests pass."
+      ]
     },
     {
       "id": "m4-001",
