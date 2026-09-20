@@ -178,7 +178,7 @@
       "id": "m0-009",
       "milestone": "foundation",
       "title": "Document and perform initial Google Cloud setup",
-      "status": "blocked",
+      "status": "in_progress",
       "dependsOn": ["m0-006"],
       "acceptanceCriteria": [
         "The setup record contains resource names and verification evidence without credentials.",
@@ -190,7 +190,7 @@
         "Google Cloud billing account access",
         "Permission to configure the GitHub repository"
       ],
-      "blockedReason": "A Google Cloud project ID, billing account authorization, and repository-administration access are required to create and verify the resources."
+      "blockedReason": "Core resources are provisioned. Completion awaits a green Cloud Run endpoint check, a tested emergency stop, and the first idle-day cost observation."
     },
     {
       "id": "m0-010",

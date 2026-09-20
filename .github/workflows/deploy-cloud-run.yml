@@ -68,7 +68,7 @@ jobs:
             --region="${{ vars.GCP_REGION }}" \
             --image="$IMAGE" \
             --service-account="scooter-shooter-runtime@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
-            --allow-unauthenticated \
+            --no-invoker-iam-check \
             --execution-environment=gen2 \
             --cpu=1 \
             --memory=512Mi \

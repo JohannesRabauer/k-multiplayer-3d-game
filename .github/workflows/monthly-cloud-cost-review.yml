@@ -1,0 +1,38 @@
+name: Monthly cloud cost review
+
+on:
+  schedule:
+    - cron: "0 8 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  remind:
+    name: Create cost review reminder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create monthly review issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          month="$(date -u +'%Y-%m')"
+          title="Cloud cost review: ${month}"
+          existing="$(
+            gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --search "\"${title}\" in:title" \
+              --json title \
+              --jq "map(select(.title == \"${title}\")) | length"
+          )"
+          if [ "$existing" -ne 0 ]; then
+            exit 0
+          fi
+
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$title" \
+            --body "Review the scooter-shooter Google Cloud bill by SKU, confirm the EUR 20 budget thresholds and alert delivery, remove unreferenced resources, and record any corrective action. Billing report: https://console.cloud.google.com/billing/reports?project=scooter-shooter-jr-2026"
