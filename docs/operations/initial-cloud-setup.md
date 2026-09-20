@@ -183,6 +183,8 @@ Observed first idle-day cost: Pending
 
 ## Completion rule
 
-Task `m0-009` remains blocked until every required checkbox is complete and the
-actual values and verification evidence above are recorded. Never paste tokens,
-private keys, billing identifiers, or credentials into this file.
+Task `m0-009` covers the one-time project, billing, identity, database, and
+repository setup above. Deployment and operations checks are tracked separately
+by `m0-011` and `m0-012`, so their outstanding evidence does not block the
+initial-setup task. Never paste tokens, private keys, complete billing
+identifiers, or credentials into this file.

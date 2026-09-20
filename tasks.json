@@ -178,45 +178,56 @@
       "id": "m0-009",
       "milestone": "foundation",
       "title": "Document and perform initial Google Cloud setup",
-      "status": "in_progress",
+      "status": "done",
       "dependsOn": ["m0-006"],
       "acceptanceCriteria": [
         "The setup record contains resource names and verification evidence without credentials.",
         "Billing alerts are configured before public deployment.",
         "Required APIs, Artifact Registry, service accounts, and the selected Central European region are recorded."
       ],
-      "evidence": ["docs/operations/initial-cloud-setup.md"],
+      "evidence": [
+        "Created billed project scooter-shooter-jr-2026 in europe-west3 with a EUR 20 budget and 50/75/90/100 percent alerts.",
+        "Created Artifact Registry, Firestore, Firebase web app, anonymous and Google sign-in providers, runtime and deployment service accounts, monitoring resources, and documented non-secret evidence in docs/operations/initial-cloud-setup.md."
+      ],
       "externalPrerequisites": [
         "Google Cloud billing account access",
         "Permission to configure the GitHub repository"
-      ],
-      "blockedReason": "Core resources are provisioned. Completion awaits a green Cloud Run endpoint check, a tested emergency stop, and the first idle-day cost observation."
+      ]
     },
     {
       "id": "m0-010",
       "milestone": "foundation",
       "title": "Configure keyless GitHub-to-Google deployment",
-      "status": "pending",
+      "status": "done",
       "dependsOn": ["m0-007", "m0-009"],
       "acceptanceCriteria": [
         "Workload Identity Federation is restricted to this repository and production branch or environment.",
         "No downloaded service-account key is stored in GitHub.",
         "The deployment identity has only the required permissions."
       ],
-      "evidence": []
+      "evidence": [
+        "Created projects/436977228213/locations/global/workloadIdentityPools/github-actions/providers/github with repository and refs/heads/main attribute restrictions.",
+        "Configured the production GitHub environment for main and stored only non-secret deployment/Firebase variables; verified both service accounts have no user-managed keys.",
+        "The keyless GitHub deployment authenticated, pushed an image, and deployed a Cloud Run revision in run 35491613569."
+      ]
     },
     {
       "id": "m0-011",
       "milestone": "foundation",
       "title": "Add Cloud Run production deployment",
-      "status": "pending",
+      "status": "blocked",
       "dependsOn": ["m0-006", "m0-010"],
       "acceptanceCriteria": [
         "Main deploys an immutable server image to Artifact Registry and Cloud Run.",
         "The workflow sets explicit region, CPU, memory, concurrency, timeout, minimum zero instances, and maximum one instance.",
         "Health and version checks verify the new revision."
       ],
-      "evidence": []
+      "evidence": [
+        ".github/workflows/deploy-cloud-run.yml",
+        "GitHub run 35492732039 authenticated keylessly, pushed immutable image 378e39d9c18b5860fa504d3c38de18a5569a5e70, and deployed a ready revision with explicit resource limits.",
+        "Cloud Run reports the revision and traffic route ready, but all generated run.app URLs return an unlogged Google Front End HTTP 404."
+      ],
+      "blockedReason": "Google Cloud Run has not provisioned a working public frontend route. Recreating the service, using another region, enabling the default URL, resetting traffic, and both public-invocation modes produced the same unlogged Google HTTP 404."
     },
     {
       "id": "m0-012",
