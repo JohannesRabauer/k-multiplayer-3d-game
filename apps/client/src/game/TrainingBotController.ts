@@ -75,9 +75,11 @@ export class TrainingBotController {
             ? forward.add(strafe.scale(0.28)).normalize()
             : strafe;
         bot.mesh.rotation.y = Math.atan2(direction.x, direction.z);
-        bot.mesh.moveWithCollisions(
-          direction.scale(BOT_SPEED_METERS_PER_SECOND * deltaSeconds)
+        const movement = direction.scale(
+          BOT_SPEED_METERS_PER_SECOND * deltaSeconds
         );
+        movement.y = -9.81 * deltaSeconds;
+        bot.mesh.moveWithCollisions(movement);
         bot.mesh.position.x = Math.min(
           this.#maximum.x - 0.75,
           Math.max(this.#minimum.x + 0.75, bot.mesh.position.x)

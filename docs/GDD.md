@@ -73,13 +73,11 @@ without an app store, and understood within one match.
 
 - Native iOS or Android packages
 - More than one map, weapon, or game mode
-- Vehicles
 - User-generated content
 - AI-generated costumes
 - Voice or text chat
 - Ranked matchmaking
 - Parties, clans, trading, shops, or payments
-- Bots
 - Full gameplay in portrait orientation
 - Guaranteed 20-player production capacity before load testing
 
@@ -96,8 +94,7 @@ gore.
 
 - **Gameplay:** landscape orientation
 - **Menus:** landscape or portrait
-- **Input:** multi-touch first; keyboard and mouse supported for development and
-  desktop testing
+- **Input:** dual-stick multi-touch plus full keyboard and mouse gameplay
 - **Distribution:** normal browser session and installable PWA
 - **Initial browsers:** current and previous major versions of Chrome for
   Android and Safari for iOS
@@ -188,16 +185,24 @@ The blue joystick occupies the lower-left thumb zone.
 
 The red joystick occupies the lower-right thumb zone.
 
-- Horizontal movement rotates yaw.
-- Vertical movement adjusts pitch within configured limits.
+- The stick direction sets the player's world-space facing direction relative to
+  the fixed camera.
 - Crossing the fire threshold starts automatic pistol fire.
-- Returning inside the threshold stops fire without resetting camera direction.
+- Returning inside the threshold stops fire without resetting the last aim
+  direction.
 - The client sends aim and fire intent; it never declares a hit.
 
 The control must track the touch identifier that began on it so additional
 touches do not steal movement or aiming.
 
-### 5.3 Aim assistance
+### 5.3 Desktop controls
+
+- WASD or arrow keys move relative to the fixed camera.
+- The mouse aims on the arena's horizontal plane.
+- Holding the left mouse button fires.
+- `E` enters a nearby vehicle or exits the active vehicle.
+
+### 5.4 Aim assistance
 
 Aim assistance is intentionally mild:
 
@@ -207,11 +212,11 @@ Aim assistance is intentionally mild:
 - It does not alter server hit geometry.
 - Strength is configurable and can be disabled.
 
-### 5.4 Camera
+### 5.5 Camera
 
-- Third-person over-the-shoulder camera
-- Collision-aware camera boom to prevent clipping through walls
-- Configurable sensitivity and pitch limits
+- Fixed elevated top-down perspective that follows the controlled player
+- No player-controlled orbit or zoom, keeping movement directions stable
+- 3D models, lighting, occlusion, and depth remain visible
 - Small, optional recoil kick
 - No camera control by remote player state
 
@@ -287,7 +292,7 @@ Blocktown is a compact low-poly city with:
 - Two flanking streets
 - Short interior or covered routes
 - Walls, parked props, planters, and low barriers for cover
-- No climbable geometry or vehicles in the MVP
+- Two simple drivable vehicles support faster traversal in offline training.
 
 The layout avoids long uninterrupted sight lines and dead ends. Spawn points
 must not directly face enemy spawn points.
@@ -336,8 +341,8 @@ Initially active:
 - **POWER POINTS**
 - **SETTINGS**
 
-Vehicles and costumes may appear as clearly marked future features only if they
-do not confuse users or block navigation.
+Vehicles are available in offline training. Multiplayer vehicle rules remain a
+future feature until server-authoritative vehicle simulation is implemented.
 
 ### 8.2 Match HUD
 

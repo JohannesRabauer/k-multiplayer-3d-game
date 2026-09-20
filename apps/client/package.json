@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@babylonjs/core": "^9.27.1",
+    "@babylonjs/loaders": "^9.27.1",
     "@scooter-shooter/game-config": "*",
     "@scooter-shooter/simulation": "*",
     "firebase": "^12.19.0"

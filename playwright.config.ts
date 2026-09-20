@@ -22,10 +22,19 @@ export default defineConfig({
   projects: [
     {
       name: "mobile-chromium",
+      testMatch: "pages.spec.ts",
       use: {
         ...devices["Pixel 7"],
         isMobile: true,
         viewport: { width: 915, height: 412 }
+      }
+    },
+    {
+      name: "desktop-chromium",
+      testMatch: "desktop.spec.ts",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 }
       }
     }
   ]

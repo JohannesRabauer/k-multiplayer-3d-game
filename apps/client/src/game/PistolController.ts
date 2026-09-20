@@ -1,4 +1,3 @@
-import type { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -10,12 +9,12 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 
 export interface PistolControllerOptions {
+  readonly getAimDirection: () => Vector3;
   readonly onAmmoChanged: (ammo: number, magazineSize: number) => void;
   readonly onShot: (origin: Vector3, direction: Vector3) => void;
 }
 
 export class PistolController {
-  readonly #camera: ArcRotateCamera;
   readonly #muzzleFlash: AbstractMesh;
   readonly #observer: Observer<Scene>;
   readonly #options: PistolControllerOptions;
@@ -32,10 +31,8 @@ export class PistolController {
   constructor(
     scene: Scene,
     player: AbstractMesh,
-    camera: ArcRotateCamera,
     options: PistolControllerOptions
   ) {
-    this.#camera = camera;
     this.#options = options;
     this.#scene = scene;
     this.#root = new TransformNode("pistol-root", scene);
@@ -114,9 +111,6 @@ export class PistolController {
   }
 
   #update(nowMs: number): void {
-    this.#root.rotation.y = -this.#camera.alpha - Math.PI / 2;
-    this.#root.rotation.x = this.#camera.beta - Math.PI / 2;
-
     if (nowMs >= this.#visualEffectEndsAtMs) {
       this.#muzzleFlash.setEnabled(false);
       this.#tracer.setEnabled(false);
@@ -160,7 +154,7 @@ export class PistolController {
     this.#playShotSound();
 
     const origin = this.#muzzleFlash.getAbsolutePosition();
-    const direction = this.#camera.getForwardRay().direction.normalize();
+    const direction = this.#options.getAimDirection().normalize();
     this.#options.onShot(origin, direction);
   }
 

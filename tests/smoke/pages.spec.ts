@@ -12,18 +12,26 @@ test("loads the 3D PWA from its GitHub Pages base path", async ({
   await expect(page.locator("#game-shell")).toBeHidden();
   await page.locator("#bot-count").selectOption("8");
   await page.locator("#offline-training").click();
+  await expect(page.locator("#status-message")).toHaveText(
+    "8 training bots ready",
+    { timeout: 15_000 }
+  );
 
   await expect(page.locator("#game-shell")).toHaveAttribute(
     "data-bot-count",
     "8"
   );
+  await expect(page.locator("#game-shell")).toHaveAttribute(
+    "data-camera-mode",
+    "top-down"
+  );
   await expect(page.locator("#game-canvas")).toBeVisible();
   await expect(page.locator("#movement-joystick")).toBeVisible();
   await expect(page.locator("#aim-joystick")).toBeVisible();
-  await expect(page.locator("#status-message")).toHaveText(
-    "8 training bots ready"
+  await expect(page.locator("#match-state")).toHaveAttribute(
+    "data-phase",
+    /^(countdown|in_progress)$/
   );
-  await expect(page.locator("#match-state")).toContainText("MATCH STARTS IN");
   await expect(page.locator("#blue-score")).toHaveText("0");
   await expect(page.locator("#red-score")).toHaveText("0");
   await expect(page.locator("#health-value")).toHaveText("100");
@@ -107,6 +115,10 @@ test("tracks independent movement and aim pointer input", async ({ page }) => {
     aimBounds.y + aimBounds.height / 2
   );
   await expect(aim).toHaveAttribute("data-firing", "true");
+  await expect(page.locator("#game-shell")).toHaveAttribute(
+    "data-aim-direction",
+    /^1\.00,0\.00$/
+  );
   await expect(page.locator("#ammo-value")).not.toHaveText("8");
   await expect(page.locator("#crosshair")).toHaveAttribute(
     "data-last-shot-result",
@@ -124,6 +136,10 @@ test("runs a live bot match without runtime failures", async ({ page }) => {
   await page.goto("./");
   await page.locator("#bot-count").selectOption("1");
   await page.locator("#offline-training").click();
+  await expect(page.locator("#status-message")).toHaveText(
+    "1 training bot ready",
+    { timeout: 15_000 }
+  );
 
   const initialBotPosition = await page
     .locator("#game-shell")
@@ -172,6 +188,9 @@ async function openTraining(page: Page): Promise<void> {
   await page.goto("./");
   await page.locator("#offline-training").click();
   await expect(page.locator("#game-shell")).toBeVisible();
+  await expect(page.locator("#status-message")).toContainText("ready", {
+    timeout: 15_000
+  });
 }
 
 function assertBounds(

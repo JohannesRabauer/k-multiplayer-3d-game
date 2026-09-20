@@ -9,7 +9,7 @@
     "done": "Acceptance criteria were verified and evidence is recorded.",
     "blocked": "Cannot proceed without an external prerequisite; blockedReason must be present."
   },
-  "updatedAt": "2026-09-20T13:30:00+02:00",
+  "updatedAt": "2026-09-20T16:30:00+02:00",
   "tasks": [
     {
       "id": "planning-001",
@@ -463,6 +463,71 @@
         "A deployed playtest exposed a missing Babylon collision coordinator import that froze bot movement and the match countdown; the runtime registration is now explicit.",
         "Passive combat, movement/fire, and bot-count restart sessions passed locally after the fix; offline countdown was reduced to three seconds.",
         "npm run validate and all 5 deeper mobile Chromium gameplay tests passed on 2026-09-20."
+      ]
+    },
+    {
+      "id": "m2-007",
+      "milestone": "offline-combat",
+      "title": "Implement fixed top-down controls and camera",
+      "status": "done",
+      "dependsOn": ["m2-006"],
+      "acceptanceCriteria": [
+        "The camera follows the player from a fixed elevated angle without player-controlled orbit or zoom.",
+        "Movement remains screen-relative while touch aiming independently controls player facing and firing.",
+        "Player and bot collision capsules stay grounded during movement."
+      ],
+      "evidence": [
+        "TopDownCamera, AimController, LocalPlayerController, PistolController, and TrainingBotController implement fixed-camera world-space controls and grounded collision movement.",
+        "Playwright verifies top-down mode, independent touch movement and aiming, live grounded bot movement, firing, and runtime stability on 2026-09-20."
+      ]
+    },
+    {
+      "id": "m2-008",
+      "milestone": "offline-combat",
+      "title": "Add complete desktop gameplay controls",
+      "status": "done",
+      "dependsOn": ["m2-007"],
+      "acceptanceCriteria": [
+        "WASD and arrow keys move the player relative to the camera.",
+        "Mouse position controls world-space aim and holding the left button fires.",
+        "Desktop controls do not interfere with the mobile dual-stick controls."
+      ],
+      "evidence": [
+        "DesktopAimController implements mouse-plane aiming and left-button fire while LocalPlayerController handles keyboard movement.",
+        "Dedicated desktop Chromium tests verify keyboard movement, mouse aim, and mouse fire while the mobile Chromium control tests continue to pass on 2026-09-20."
+      ]
+    },
+    {
+      "id": "m2-009",
+      "milestone": "offline-combat",
+      "title": "Integrate licensed low-poly game models",
+      "status": "done",
+      "dependsOn": ["m2-007"],
+      "acceptanceCriteria": [
+        "Player, bots, city buildings, props, and vehicles use redistributable low-poly models.",
+        "Every imported asset has recorded source and license provenance.",
+        "Model loading works from the GitHub Pages base path and remains within the PWA precache limit."
+      ],
+      "evidence": [
+        "Selected Kenney CC0 models, required textures, and original license files are stored under apps/client/public/assets/kenney.",
+        "docs/assets.md records pack versions, sources, project use, and modifications.",
+        "The glTF 2 loader and required unlit-material extension load on demand; the production PWA build succeeds and a browser playtest verifies all assets load from the Pages base path."
+      ]
+    },
+    {
+      "id": "m2-010",
+      "milestone": "offline-combat",
+      "title": "Add drivable offline training vehicles",
+      "status": "done",
+      "dependsOn": ["m2-007", "m2-009"],
+      "acceptanceCriteria": [
+        "The player can enter a nearby vehicle, drive it with touch or keyboard movement, and exit it.",
+        "Driving preserves camera tracking, map boundaries, collisions, and bot targeting.",
+        "Death and scene teardown safely clear the active vehicle state."
+      ],
+      "evidence": [
+        "VehicleController and LocalPlayerController implement proximity interaction, enter, drive, exit, collision, boundary, death, and disposal behavior.",
+        "Desktop Chromium verifies entering with E, driving, synchronized player position, and exiting on 2026-09-20."
       ]
     },
     {

@@ -265,6 +265,45 @@ h1 {
   pointer-events: none;
 }
 
+.desktop-controls {
+  position: absolute;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  display: none;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  background: rgb(9 17 40 / 78%);
+  color: rgb(255 255 255 / 75%);
+  font-size: 0.72rem;
+}
+
+.button--vehicle {
+  position: absolute;
+  right: max(1.25rem, env(safe-area-inset-right));
+  bottom: max(10.75rem, calc(env(safe-area-inset-bottom) + 10.75rem));
+  z-index: 2;
+  min-width: 7rem;
+  border-color: #ffd657;
+  background: rgb(9 17 40 / 88%);
+  color: #ffd657;
+  pointer-events: auto;
+}
+
+.button--vehicle[hidden] {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .desktop-controls {
+    display: block;
+  }
+
+  .joystick {
+    opacity: 0.28;
+  }
+}
+
 .match-score {
   position: absolute;
   top: max(0.75rem, env(safe-area-inset-top));

@@ -1,8 +1,6 @@
 import type { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
-import { Scalar } from "@babylonjs/core/Maths/math.scalar";
-import { Vector2 } from "@babylonjs/core/Maths/math.vector";
-import type { Observer } from "@babylonjs/core/Misc/observable";
-import type { Scene } from "@babylonjs/core/scene";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 
 export interface AimControllerOptions {
@@ -12,26 +10,36 @@ export interface AimControllerOptions {
 export class AimController {
   readonly #aimInput = Vector2.Zero();
   readonly #camera: ArcRotateCamera;
-  readonly #observer: Observer<Scene>;
   readonly #options: AimControllerOptions;
+  readonly #player: AbstractMesh;
+  readonly #worldDirection = Vector3.Forward();
   #isFiring = false;
 
   constructor(
-    scene: Scene,
     camera: ArcRotateCamera,
+    player: AbstractMesh,
     options: AimControllerOptions
   ) {
     this.#camera = camera;
+    this.#player = player;
     this.#options = options;
-    this.#observer = scene.onBeforeRenderObservable.add(() => {
-      this.#update(scene.getEngine().getDeltaTime() / 1_000);
-    });
+    this.#worldDirection.copyFrom(this.#getCameraForward());
+    this.#faceAimDirection();
   }
 
   setAimInput(x: number, y: number): void {
     this.#aimInput.set(x, y);
-    const isFiring =
-      this.#aimInput.length() >= DEFAULT_GAME_CONFIG.pistol.autoFireThreshold;
+    const magnitude = this.#aimInput.length();
+    const isFiring = magnitude >= DEFAULT_GAME_CONFIG.pistol.autoFireThreshold;
+
+    if (magnitude > DEFAULT_GAME_CONFIG.movement.inputDeadZone) {
+      const forward = this.#getCameraForward();
+      const right = Vector3.Cross(Vector3.Up(), forward).normalize();
+      this.#worldDirection
+        .copyFrom(forward.scale(y).addInPlace(right.scale(x)))
+        .normalize();
+      this.#faceAimDirection();
+    }
 
     if (isFiring !== this.#isFiring) {
       this.#isFiring = isFiring;
@@ -39,20 +47,44 @@ export class AimController {
     }
   }
 
-  dispose(scene: Scene): void {
-    this.setAimInput(0, 0);
-    scene.onBeforeRenderObservable.remove(this.#observer);
+  setAimDirection(direction: Vector3): void {
+    const horizontal = direction.multiplyByFloats(1, 0, 1);
+    if (horizontal.lengthSquared() === 0) {
+      return;
+    }
+    this.#worldDirection.copyFrom(horizontal.normalize());
+    this.#faceAimDirection();
   }
 
-  #update(deltaSeconds: number): void {
-    const cameraConfig = DEFAULT_GAME_CONFIG.camera;
-    this.#camera.alpha -=
-      this.#aimInput.x * cameraConfig.aimYawRadiansPerSecond * deltaSeconds;
-    this.#camera.beta = Scalar.Clamp(
-      this.#camera.beta -
-        this.#aimInput.y * cameraConfig.aimPitchRadiansPerSecond * deltaSeconds,
-      cameraConfig.minimumPitchRadians,
-      cameraConfig.maximumPitchRadians
+  setFireIntent(isFiring: boolean): void {
+    if (isFiring === this.#isFiring) {
+      return;
+    }
+    this.#isFiring = isFiring;
+    this.#options.onFireIntentChanged(isFiring);
+  }
+
+  getAimDirection(): Vector3 {
+    return this.#worldDirection.clone();
+  }
+
+  dispose(): void {
+    this.setFireIntent(false);
+  }
+
+  #faceAimDirection(): void {
+    this.#player.rotation.y = Math.atan2(
+      this.#worldDirection.x,
+      this.#worldDirection.z
     );
+  }
+
+  #getCameraForward(): Vector3 {
+    const forward = this.#camera
+      .getForwardRay()
+      .direction.multiplyByFloats(1, 0, 1);
+    return forward.lengthSquared() === 0
+      ? Vector3.Forward()
+      : forward.normalize();
   }
 }

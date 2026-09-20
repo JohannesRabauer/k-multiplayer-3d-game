@@ -23,13 +23,21 @@ import {
 } from "./auth/FirebaseAuthController";
 import { AimController } from "./game/AimController";
 import { createBlocktown } from "./game/createBlocktown";
+import {
+  addCharacterModel,
+  addCityModel,
+  addVehicleModel,
+  addVehiclePropModel
+} from "./game/GameAssets";
 import { LocalPlayerController } from "./game/LocalPlayerController";
 import { LocalHitscanResolver } from "./game/LocalHitscanResolver";
 import { OfflineCombatController } from "./game/OfflineCombatController";
 import { PerformanceMonitor } from "./game/PerformanceMonitor";
 import { PistolController } from "./game/PistolController";
-import { createThirdPersonCamera } from "./game/ThirdPersonCamera";
+import { createTopDownCamera } from "./game/TopDownCamera";
 import { TrainingBotController } from "./game/TrainingBotController";
+import { VehicleController } from "./game/VehicleController";
+import { DesktopAimController } from "./input/DesktopAimController";
 import { VirtualJoystick } from "./input/VirtualJoystick";
 
 function requireHtmlElement(id: string): HTMLElement {
@@ -110,9 +118,11 @@ const signOutButton = requireButtonElement("sign-out");
 const openTrainingButton = requireButtonElement("open-training");
 const offlineTrainingButton = requireButtonElement("offline-training");
 const leaveTrainingButton = requireButtonElement("leave-training");
+const vehicleActionButton = requireButtonElement("vehicle-action");
 const botCountSelect = requireSelectElement("bot-count");
 
 let stopGame: (() => void) | undefined;
+let isGameStarting = false;
 
 function showCompatibilityFailure(message: string): void {
   canvas.hidden = true;
@@ -120,7 +130,7 @@ function showCompatibilityFailure(message: string): void {
   statusMessage.textContent = message;
 }
 
-function createScene(engine: Engine, botCount: number): Scene {
+async function createScene(engine: Engine, botCount: number): Promise<Scene> {
   const scene = new Scene(engine);
   scene.collisionsEnabled = true;
   scene.clearColor = new Color4(0.055, 0.1, 0.22, 1);
@@ -146,10 +156,18 @@ function createScene(engine: Engine, botCount: number): Scene {
   player.position.y = 1.2;
   const playerMaterial = new StandardMaterial("player-material", scene);
   playerMaterial.diffuseColor = Color3.FromHexString("#57c7ff");
+  playerMaterial.alpha = 0;
   player.material = playerMaterial;
+  const playerVisual = await addCharacterModel(
+    scene,
+    player,
+    "player",
+    "player-model"
+  );
 
   const targetMaterial = new StandardMaterial("target-material", scene);
   targetMaterial.diffuseColor = Color3.FromHexString("#ff557c");
+  targetMaterial.alpha = 0;
   const botSpawnPositions = [
     new Vector3(11, 0.1, 0),
     map.redSpawnPositions[0],
@@ -174,8 +192,115 @@ function createScene(engine: Engine, botCount: number): Scene {
       mesh.material = targetMaterial;
       mesh.checkCollisions = true;
       mesh.ellipsoid = new Vector3(0.55, 1.2, 0.55);
+      mesh.ellipsoidOffset = Vector3.Zero();
       return { id, mesh, spawnPosition: mesh.position.clone() };
     });
+  await Promise.all(
+    bots.map((bot) =>
+      addCharacterModel(scene, bot.mesh, "bot", `${bot.id}-model`)
+    )
+  );
+  for (const mesh of map.collisionMeshes) {
+    if (mesh.name.startsWith("building-") || mesh.name.startsWith("cover-")) {
+      mesh.visibility = 0;
+    }
+  }
+  await Promise.all([
+    addCityModel(
+      scene,
+      "building-a",
+      new Vector3(-14, 3, 11),
+      new Vector3(5, 3, 4),
+      "city-building-north-west"
+    ),
+    addCityModel(
+      scene,
+      "building-f",
+      new Vector3(14, 4, 11),
+      new Vector3(5, 3.2, 4),
+      "city-building-north-east"
+    ),
+    addCityModel(
+      scene,
+      "building-d",
+      new Vector3(-14, 3.5, -11),
+      new Vector3(5, 3.2, 4),
+      "city-building-south-west"
+    ),
+    addCityModel(
+      scene,
+      "building-a",
+      new Vector3(14, 2.5, -11),
+      new Vector3(5, 2.5, 4),
+      "city-building-south-east"
+    ),
+    addCityModel(
+      scene,
+      "parasol",
+      new Vector3(2.5, 1, 2.5),
+      new Vector3(1.5, 1.5, 1.5),
+      "plaza-parasol"
+    ),
+    addVehiclePropModel(
+      scene,
+      "box",
+      new Vector3(-8, 0.63, 3),
+      new Vector3(2, 0.63, 0.5),
+      "cover-crates-west-north"
+    ),
+    addVehiclePropModel(
+      scene,
+      "box",
+      new Vector3(8, 0.63, -3),
+      new Vector3(2, 0.63, 0.5),
+      "cover-crates-east-south"
+    ),
+    addVehiclePropModel(
+      scene,
+      "cone",
+      new Vector3(2, 0.55, -4),
+      new Vector3(0.45, 0.55, 0.45),
+      "traffic-cone-one"
+    ),
+    addVehiclePropModel(
+      scene,
+      "cone",
+      new Vector3(3, 0.55, -4),
+      new Vector3(0.45, 0.55, 0.45),
+      "traffic-cone-two"
+    )
+  ]);
+  const vehicleMaterial = new StandardMaterial("vehicle-collider", scene);
+  vehicleMaterial.alpha = 0;
+  const vehicleDefinitions = [
+    {
+      id: "vehicle-sedan",
+      model: "sedan" as const,
+      position: new Vector3(-15.5, 0.65, -3)
+    },
+    {
+      id: "vehicle-hatchback",
+      model: "hatchback-sports" as const,
+      position: new Vector3(10, 0.65, 3)
+    }
+  ];
+  const vehicles = vehicleDefinitions.map((definition) => {
+    const mesh = MeshBuilder.CreateBox(
+      definition.id,
+      { width: 2.2, height: 1.3, depth: 3.2 },
+      scene
+    );
+    mesh.position.copyFrom(definition.position);
+    mesh.material = vehicleMaterial;
+    mesh.checkCollisions = true;
+    mesh.ellipsoid = new Vector3(1.1, 0.65, 1.6);
+    return { id: definition.id, mesh, model: definition.model };
+  });
+  await Promise.all(
+    vehicles.map((vehicle) =>
+      addVehicleModel(scene, vehicle.mesh, vehicle.model, `${vehicle.id}-model`)
+    )
+  );
   const combatController = new OfflineCombatController(
     player,
     player.position,
@@ -195,7 +320,8 @@ function createScene(engine: Engine, botCount: number): Scene {
     performance.now()
   );
 
-  const camera = createThirdPersonCamera(scene, canvas, player);
+  const camera = createTopDownCamera(scene, player);
+  gameShell.dataset.cameraMode = "top-down";
   const hitscanResolver = new LocalHitscanResolver(
     scene,
     map.collisionMeshes,
@@ -208,6 +334,13 @@ function createScene(engine: Engine, botCount: number): Scene {
     map.playAreaMinimum,
     map.playAreaMaximum
   );
+  const vehicleController = new VehicleController(
+    scene,
+    vehicles,
+    playerController,
+    playerVisual,
+    vehicleActionButton
+  );
   const movementJoystick = new VirtualJoystick(movementJoystickElement, {
     deadZone: DEFAULT_GAME_CONFIG.movement.inputDeadZone,
     onInput: (x, y) => {
@@ -217,7 +350,16 @@ function createScene(engine: Engine, botCount: number): Scene {
       );
     }
   });
-  const pistolController = new PistolController(scene, player, camera, {
+  const pistolControllerReference: { current?: PistolController } = {};
+  const aimController = new AimController(camera, player, {
+    onFireIntentChanged: (isFiring) => {
+      const canFire = isFiring && combatController.isPlayerAlive();
+      aimJoystickElement.dataset.firing = String(canFire);
+      pistolControllerReference.current?.setTriggerHeld(canFire);
+    }
+  });
+  const pistolController = new PistolController(scene, player, {
+    getAimDirection: () => aimController.getAimDirection(),
     onAmmoChanged: (ammo, magazineSize) => {
       ammoValueElement.textContent = String(ammo);
       ammoValueElement.parentElement?.setAttribute(
@@ -233,13 +375,14 @@ function createScene(engine: Engine, botCount: number): Scene {
       }
     }
   });
-  const aimController = new AimController(scene, camera, {
-    onFireIntentChanged: (isFiring) => {
-      const canFire = isFiring && combatController.isPlayerAlive();
-      aimJoystickElement.dataset.firing = String(canFire);
-      pistolController.setTriggerHeld(canFire);
-    }
-  });
+  pistolControllerReference.current = pistolController;
+  const desktopAimController = new DesktopAimController(
+    scene,
+    canvas,
+    camera,
+    player,
+    aimController
+  );
   const aimJoystick = new VirtualJoystick(aimJoystickElement, {
     deadZone: DEFAULT_GAME_CONFIG.movement.inputDeadZone,
     onInput: (x, y) => {
@@ -269,10 +412,13 @@ function createScene(engine: Engine, botCount: number): Scene {
     gameShell.dataset.botPositions = bots
       .map(
         (bot) =>
-          `${bot.mesh.position.x.toFixed(2)},${bot.mesh.position.z.toFixed(2)}`
+          `${bot.mesh.position.x.toFixed(2)},${bot.mesh.position.y.toFixed(2)},${bot.mesh.position.z.toFixed(2)}`
       )
       .join(";");
+    const aimDirection = aimController.getAimDirection();
+    gameShell.dataset.aimDirection = `${aimDirection.x.toFixed(2)},${aimDirection.z.toFixed(2)}`;
     if (!combatController.isPlayerAlive()) {
+      vehicleController.exitVehicle();
       playerController.setMoveInput(0, 0);
       pistolController.setTriggerHeld(false);
     }
@@ -280,9 +426,11 @@ function createScene(engine: Engine, botCount: number): Scene {
   scene.onDisposeObservable.addOnce(() => {
     performanceMonitor.dispose();
     botController.dispose();
+    vehicleController.dispose(scene);
+    desktopAimController.dispose();
     pistolController.dispose();
     aimJoystick.dispose();
-    aimController.dispose(scene);
+    aimController.dispose();
     movementJoystick.dispose();
     playerController.dispose(scene);
   });
@@ -290,16 +438,18 @@ function createScene(engine: Engine, botCount: number): Scene {
   return scene;
 }
 
-function startGame(): void {
-  if (stopGame !== undefined) {
+async function startGame(): Promise<void> {
+  if (stopGame !== undefined || isGameStarting) {
     return;
   }
+  isGameStarting = true;
   if (!Engine.isSupported()) {
     entryScreen.hidden = true;
     gameShell.hidden = false;
     showCompatibilityFailure(
       "This device does not provide the WebGL support required to play."
     );
+    isGameStarting = false;
     return;
   }
 
@@ -321,10 +471,24 @@ function startGame(): void {
     preserveDrawingBuffer: false,
     stencil: false
   });
-  const scene = createScene(engine, botCount);
+  statusMessage.textContent = "Loading characters, city, and vehicles…";
+  let scene: Scene;
+  try {
+    scene = await createScene(engine, botCount);
+  } catch (error: unknown) {
+    engine.dispose();
+    showCompatibilityFailure(
+      error instanceof Error
+        ? `Game assets could not load: ${error.message}`
+        : "Game assets could not load."
+    );
+    isGameStarting = false;
+    return;
+  }
 
   statusMessage.textContent = `${String(botCount)} training ${botCount === 1 ? "bot" : "bots"} ready`;
   statusPanel.classList.add("status-panel--ready");
+  isGameStarting = false;
 
   engine.runRenderLoop(() => {
     scene.render();
@@ -376,8 +540,12 @@ function setAuthBusy(busy: boolean): void {
 }
 
 async function initializeEntryFlow(): Promise<void> {
-  openTrainingButton.addEventListener("click", startGame);
-  offlineTrainingButton.addEventListener("click", startGame);
+  openTrainingButton.addEventListener("click", () => {
+    void startGame();
+  });
+  offlineTrainingButton.addEventListener("click", () => {
+    void startGame();
+  });
   leaveTrainingButton.addEventListener("click", () => {
     stopGame?.();
   });

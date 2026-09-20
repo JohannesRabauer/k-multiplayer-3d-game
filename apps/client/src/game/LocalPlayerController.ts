@@ -14,6 +14,7 @@ export class LocalPlayerController {
   readonly #minimum: Vector3;
   readonly #movementInput = Vector2.Zero();
   readonly #observer: Observer<Scene>;
+  #vehicle: AbstractMesh | undefined;
 
   constructor(
     scene: Scene,
@@ -29,7 +30,7 @@ export class LocalPlayerController {
 
     this.#mesh.checkCollisions = true;
     this.#mesh.ellipsoid = new Vector3(0.5, 1.1, 0.5);
-    this.#mesh.ellipsoidOffset = new Vector3(0, 1.1, 0);
+    this.#mesh.ellipsoidOffset = Vector3.Zero();
 
     window.addEventListener("keydown", this.#onKeyDown);
     window.addEventListener("keyup", this.#onKeyUp);
@@ -52,6 +53,28 @@ export class LocalPlayerController {
       input.normalize();
     }
     this.#movementInput.copyFrom(input);
+  }
+
+  enterVehicle(vehicle: AbstractMesh): void {
+    this.#vehicle = vehicle;
+  }
+
+  exitVehicle(): void {
+    if (this.#vehicle === undefined) {
+      return;
+    }
+    const right = new Vector3(
+      Math.cos(this.#vehicle.rotation.y),
+      0,
+      -Math.sin(this.#vehicle.rotation.y)
+    );
+    this.#mesh.position.copyFrom(this.#vehicle.position.add(right.scale(2.2)));
+    this.#mesh.position.y = 1.2;
+    this.#vehicle = undefined;
+  }
+
+  getPosition(): Vector3 {
+    return this.#mesh.position;
   }
 
   dispose(scene: Scene): void {
@@ -100,26 +123,35 @@ export class LocalPlayerController {
       .scale(input.y)
       .addInPlace(cameraRight.scale(input.x));
 
+    const controlledMesh = this.#vehicle ?? this.#mesh;
     if (movement.lengthSquared() > 0) {
       movement.normalize();
-      this.#mesh.rotation.y = Math.atan2(movement.x, movement.z);
+      if (this.#vehicle !== undefined) {
+        controlledMesh.rotation.y = Math.atan2(movement.x, movement.z);
+      }
     }
 
     const distance =
-      DEFAULT_GAME_CONFIG.movement.speedMetersPerSecond * deltaSeconds;
+      DEFAULT_GAME_CONFIG.movement.speedMetersPerSecond *
+      (this.#vehicle === undefined ? 1 : 1.75) *
+      deltaSeconds;
     movement.scaleInPlace(distance);
     movement.y = -9.81 * deltaSeconds;
-    this.#mesh.moveWithCollisions(movement);
+    controlledMesh.moveWithCollisions(movement);
 
-    this.#mesh.position.x = Scalar.Clamp(
-      this.#mesh.position.x,
+    controlledMesh.position.x = Scalar.Clamp(
+      controlledMesh.position.x,
       this.#minimum.x,
       this.#maximum.x
     );
-    this.#mesh.position.z = Scalar.Clamp(
-      this.#mesh.position.z,
+    controlledMesh.position.z = Scalar.Clamp(
+      controlledMesh.position.z,
       this.#minimum.z,
       this.#maximum.z
     );
+    if (this.#vehicle !== undefined) {
+      this.#mesh.position.x = controlledMesh.position.x;
+      this.#mesh.position.z = controlledMesh.position.z;
+    }
   }
 }
