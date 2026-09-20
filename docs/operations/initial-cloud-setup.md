@@ -146,8 +146,8 @@ session affinity is not a correctness guarantee for game-room routing.
 - [x] A monthly cost-by-SKU review reminder exists.
 - [x] The emergency procedure to disable public access is tested.
 
-The uptime check and its email-backed alert policy exist, but the notification
-email must be verified from the message sent to `rabauer.dev@gmail.com`.
+Alert delivery to `rabauer.dev@gmail.com` was confirmed on 2026-09-20 when the
+uptime policy fired for the failing Cloud Run health check.
 
 Emergency stop:
 
@@ -176,6 +176,7 @@ Cloud Run deployment run: https://github.com/JohannesRabauer/k-multiplayer-3d-ga
 Cloud Run /healthz result: Blocked by an unlogged Google Front End HTTP 404 as of 2026-09-20
 Cloud Run /readyz result: Blocked by an unlogged Google Front End HTTP 404 as of 2026-09-20
 Cloud Run /version result: Blocked by an unlogged Google Front End HTTP 404 as of 2026-09-20
+Monitoring evidence: `Scooter Shooter unavailable` fired at 2026-09-20 05:50 UTC with `check_passed=0`; email delivery confirmed
 Budget resource: billing budget `e34efade-a7b3-43d4-afd0-290c0df6b050`
 IAM policy review evidence: repository/branch-restricted Workload Identity provider and least-privilege service-account bindings verified with gcloud on 2026-09-20
 Observed first idle-day cost: Pending

@@ -225,7 +225,8 @@
       "evidence": [
         ".github/workflows/deploy-cloud-run.yml",
         "GitHub run 35492732039 authenticated keylessly, pushed immutable image 378e39d9c18b5860fa504d3c38de18a5569a5e70, and deployed a ready revision with explicit resource limits.",
-        "Cloud Run reports the revision and traffic route ready, but all generated run.app URLs return an unlogged Google Front End HTTP 404."
+        "Cloud Run reports the revision and traffic route ready, but all generated run.app URLs return an unlogged Google Front End HTTP 404.",
+        "The Scooter Shooter unavailable alert fired at 2026-09-20 05:50 UTC with check_passed=0, and delivery to the operator email was confirmed."
       ],
       "blockedReason": "Google Cloud Run has not provisioned a working public frontend route. Recreating the service, using another region, enabling the default URL, resetting traffic, and both public-invocation modes produced the same unlogged Google HTTP 404."
     },
