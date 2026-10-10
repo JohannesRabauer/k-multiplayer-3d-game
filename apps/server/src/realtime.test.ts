@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
 
 import {
+  DEFAULT_SKIN,
   PROTOCOL_VERSION,
   parseServerMessage,
   type ClientMessage,
@@ -344,6 +345,116 @@ void describe("realtime gateway", () => {
     const left = await host.waitFor("playerLeft");
     assert.equal(left.playerId, guestJoin.playerId);
     host.close();
+  });
+});
+
+void describe("shared match state", () => {
+  const redSkin = {
+    ...DEFAULT_SKIN,
+    headwear: "knight" as const,
+    topColor: "#ff0000",
+    eyeShape: "angry" as const
+  };
+
+  async function pair(prefix: string, hostSkin?: typeof redSkin) {
+    const host = await TestClient.connect(socketUrl);
+    await host.handshake(`${prefix}-host`, "Host");
+    if (hostSkin !== undefined) {
+      host.send({ type: "setSkin", skin: hostSkin });
+    }
+    host.send({ type: "createRoom" });
+    const hostJoin = await host.waitFor("joinAccepted");
+
+    const guest = await TestClient.connect(socketUrl);
+    await guest.handshake(`${prefix}-guest`, "Guest");
+    guest.send({ type: "joinWithCode", roomCode: hostJoin.roomCode });
+    const guestJoin = await guest.waitFor("joinAccepted");
+    return { host, guest, hostJoin, guestJoin };
+  }
+
+  void it("shows every player's skin to the players who join later", async () => {
+    const { host, guest, guestJoin } = await pair("skin-1", redSkin);
+
+    const hostMember = guestJoin.members.find((m) => m.displayName === "Host");
+    assert.deepEqual(hostMember?.skin, redSkin);
+    const guestMember = guestJoin.members.find(
+      (m) => m.displayName === "Guest"
+    );
+    assert.deepEqual(guestMember?.skin, DEFAULT_SKIN);
+
+    host.close();
+    guest.close();
+  });
+
+  void it("relays a skin change to everyone in the room", async () => {
+    const { host, guest, guestJoin } = await pair("skin-2");
+
+    guest.send({ type: "setSkin", skin: redSkin });
+    const changed = await host.waitFor("skinChanged");
+    assert.equal(changed.playerId, guestJoin.playerId);
+    assert.deepEqual(changed.skin, redSkin);
+
+    host.close();
+    guest.close();
+  });
+
+  void it("ignores an invalid skin instead of relaying it", async () => {
+    const { host, guest } = await pair("skin-3");
+
+    guest.send({
+      type: "setSkin",
+      skin: { ...DEFAULT_SKIN, headwear: "crown" }
+    } as unknown as ClientMessage);
+    await delay(200);
+
+    assert.equal(
+      host.received.some((message) => message.type === "skinChanged"),
+      false
+    );
+    host.close();
+    guest.close();
+  });
+
+  void it("sends both players the same shot result and refuses a rapid second shot", async () => {
+    const { host, guest, hostJoin } = await pair("shot-1");
+    await host.waitFor("snapshot");
+    await delay(150);
+
+    const fire = (sequence: number): ClientMessage => ({
+      type: "fireIntent",
+      inputSequence: sequence,
+      clientShotTimeMs: Date.now(),
+      aimOrigin: { x: 0, y: 1, z: 0 },
+      aimDirection: { x: 0, y: 0, z: 1 }
+    });
+    host.send(fire(1));
+    host.send(fire(2));
+    await delay(300);
+
+    const results = (client: TestClient) =>
+      client.received.filter(
+        (message): message is Extract<ServerMessage, { type: "shotResult" }> =>
+          message.type === "shotResult" &&
+          message.shooterId === hostJoin.playerId
+      );
+    assert.deepEqual(results(host), results(guest));
+    assert.equal(results(host).length, 2);
+    assert.equal(results(host)[0]?.accepted, true);
+    assert.equal(results(host)[1]?.accepted, false);
+
+    host.close();
+    guest.close();
+  });
+
+  void it("re-broadcasts the match state so late or missed updates heal", async () => {
+    const { host, guest } = await pair("state-1");
+    await delay(1300);
+    const states = (client: TestClient) =>
+      client.received.filter((message) => message.type === "matchState");
+    assert.ok(states(host).length >= 2, "host should get periodic state");
+    assert.ok(states(guest).length >= 2, "guest should get periodic state");
+    host.close();
+    guest.close();
   });
 });
 

@@ -2,7 +2,9 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
 import {
+  DEFAULT_SKIN,
   PROTOCOL_VERSION,
+  parseSkinOrDefault,
   parseClientMessage,
   parseServerMessage
 } from "./index.js";
@@ -91,6 +93,37 @@ void describe("server protocol", () => {
         amount: 25,
         remainingHealth: -1
       });
+    });
+  });
+});
+
+void describe("skins", () => {
+  void it("accepts the default skin in a setSkin message", () => {
+    const message = parseClientMessage({ type: "setSkin", skin: DEFAULT_SKIN });
+    assert.equal(message.type, "setSkin");
+  });
+
+  void it("rejects unknown items and malformed colours", () => {
+    assert.throws(() => {
+      parseClientMessage({
+        type: "setSkin",
+        skin: { ...DEFAULT_SKIN, headwear: "crown" }
+      });
+    });
+    assert.throws(() => {
+      parseClientMessage({
+        type: "setSkin",
+        skin: { ...DEFAULT_SKIN, topColor: "red" }
+      });
+    });
+  });
+
+  void it("falls back to the default skin for invalid stored data", () => {
+    assert.deepEqual(parseSkinOrDefault({ nonsense: true }), DEFAULT_SKIN);
+    const custom = { ...DEFAULT_SKIN, topColor: "#AABBCC", glasses: "round" };
+    assert.deepEqual(parseSkinOrDefault(custom), {
+      ...custom,
+      topColor: "#aabbcc"
     });
   });
 });

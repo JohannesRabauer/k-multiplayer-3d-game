@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { skinSchema } from "./skin.js";
+
+export * from "./skin.js";
+
 export const PROTOCOL_VERSION = 1 as const;
 
 const identifierSchema = z.string().min(1).max(128);
@@ -104,6 +108,13 @@ const fireIntentSchema = z
   })
   .strict();
 
+const setSkinSchema = z
+  .object({
+    type: z.literal("setSkin"),
+    skin: skinSchema
+  })
+  .strict();
+
 const heartbeatSchema = z
   .object({
     type: z.literal("heartbeat"),
@@ -122,6 +133,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   joinQuickPlaySchema,
   createRoomSchema,
   joinWithCodeSchema,
+  setSkinSchema,
   inputBatchSchema,
   fireIntentSchema,
   heartbeatSchema,
@@ -141,7 +153,9 @@ export const roomMemberSchema = z
   .object({
     playerId: identifierSchema,
     displayName: z.string().min(1).max(64),
-    team: teamSchema
+    team: teamSchema,
+    /** Optional so a client stays compatible with a server that predates skins. */
+    skin: skinSchema.optional()
   })
   .strict();
 
@@ -169,6 +183,14 @@ const playerLeftSchema = z
   .object({
     type: z.literal("playerLeft"),
     playerId: identifierSchema
+  })
+  .strict();
+
+const skinChangedSchema = z
+  .object({
+    type: z.literal("skinChanged"),
+    playerId: identifierSchema,
+    skin: skinSchema
   })
   .strict();
 
@@ -288,6 +310,7 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   joinRejectedSchema,
   playerJoinedSchema,
   playerLeftSchema,
+  skinChangedSchema,
   snapshotSchema,
   shotResultSchema,
   damageSchema,
