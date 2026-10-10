@@ -50,6 +50,8 @@ interface Connection {
 
 /** Largest single frame accepted, as a cheap abuse guard. */
 const MAX_MESSAGE_BYTES = 16_384;
+/** Liveness pings are sent every this many ticks (about every 3 seconds). */
+const PING_EVERY_TICKS = 60;
 /** Input frames buffered per player before the oldest are dropped. */
 const MAX_PENDING_INPUTS = 32;
 
@@ -349,6 +351,16 @@ export function attachRealtimeGateway(
       void handleMessage(connection, text);
     });
 
+    // Browsers answer protocol-level pings even while a heavy scene load keeps
+    // the page's JavaScript busy, so a pong proves the device is still there.
+    socket.on("pong", () => {
+      const nowMs = now();
+      connection.lastSeenMs = nowMs;
+      if (connection.player !== undefined) {
+        connection.player.lastSeenMs = nowMs;
+      }
+    });
+
     socket.on("close", () => {
       leaveRoom(connection, now());
       connections.delete(connection);
@@ -360,8 +372,17 @@ export function attachRealtimeGateway(
     });
   });
 
+  let tickCount = 0;
   const ticker = setInterval(() => {
     const nowMs = now();
+    tickCount += 1;
+    if (tickCount % PING_EVERY_TICKS === 0) {
+      for (const connection of connections) {
+        if (connection.socket.readyState === connection.socket.OPEN) {
+          connection.socket.ping();
+        }
+      }
+    }
 
     for (const connection of connections) {
       const player = connection.player;
