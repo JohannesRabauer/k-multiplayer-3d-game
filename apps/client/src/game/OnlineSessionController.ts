@@ -1,7 +1,10 @@
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import type { ServerMessage } from "@scooter-shooter/protocol";
+import type { ServerMessage, Team } from "@scooter-shooter/protocol";
 
 import type { NetworkClient } from "../net/NetworkClient";
 import { RemotePlayerRenderer } from "./RemotePlayerRenderer";
@@ -19,6 +22,19 @@ export interface OnlineSessionElements {
 
 /** How often local input is sent upstream, matching the server tick. */
 const INPUT_SEND_INTERVAL_MS = 50;
+/** Prediction error below this is ordinary jitter and left alone. */
+const CORRECTION_DEADZONE = 0.35;
+/** Beyond this the player is simply put where the server says. */
+const HARD_SNAP_DISTANCE = 3;
+/** Share of a moderate error removed per snapshot, for a smooth pull-back. */
+const CORRECTION_BLEND = 0.3;
+const MAX_HISTORY = 120;
+
+interface PredictedPosition {
+  readonly sequence: number;
+  x: number;
+  z: number;
+}
 
 /**
  * Drives an online match: publishes local input, applies authoritative
@@ -36,12 +52,16 @@ export class OnlineSessionController {
   readonly #shotEffects: ShotEffects;
   readonly #getMovement: () => { readonly x: number; readonly z: number };
   readonly #getAimYaw: () => number;
+  readonly #setLocalVisible: (visible: boolean) => void;
+  readonly #history: PredictedPosition[] = [];
 
+  #phaseEndsAtMs = 0;
   #lastSendMs = 0;
   #health = 100;
   #isAlive = true;
-  #remainingMs = 0;
+  #shownSeconds = -1;
   #phase = "waiting_for_players";
+  #winningTeam: Team | null = null;
   #blueScore = 0;
   #redScore = 0;
   #snapshotsApplied = 0;
@@ -56,6 +76,7 @@ export class OnlineSessionController {
     input: {
       readonly getMovement: () => { readonly x: number; readonly z: number };
       readonly getAimYaw: () => number;
+      readonly setLocalVisible?: (visible: boolean) => void;
     }
   ) {
     this.#network = network;
@@ -65,15 +86,32 @@ export class OnlineSessionController {
     this.#remotePlayers = new RemotePlayerRenderer(scene);
     this.#getMovement = input.getMovement;
     this.#getAimYaw = input.getAimYaw;
+    this.#setLocalVisible = input.setLocalVisible ?? (() => undefined);
 
     const match = network.match;
     if (match !== undefined) {
+      this.#createTeamRing(scene, match.team);
       this.#remotePlayers.setLocalPlayerId(match.playerId);
+      for (const member of match.members) {
+        this.#remotePlayers.registerMember(member);
+      }
     }
   }
 
   get remotePlayerCount(): number {
     return this.#remotePlayers.count;
+  }
+
+  get remoteSummary(): ReturnType<RemotePlayerRenderer["describe"]> {
+    return this.#remotePlayers.describe();
+  }
+
+  get scores(): { readonly blue: number; readonly red: number } {
+    return { blue: this.#blueScore, red: this.#redScore };
+  }
+
+  get health(): number {
+    return this.#health;
   }
 
   get snapshotsApplied(): number {
@@ -102,8 +140,29 @@ export class OnlineSessionController {
         this.#phase = message.phase;
         this.#blueScore = message.blueScore;
         this.#redScore = message.redScore;
-        this.#remainingMs = message.remainingMs;
+        this.#phaseEndsAtMs = performance.now() + message.remainingMs;
+        this.#winningTeam = message.winningTeam;
         this.#renderMatchState();
+        return;
+      }
+      case "joinAccepted": {
+        // A reconnect lands in the same room under a new player id.
+        this.#remotePlayers.setLocalPlayerId(message.playerId);
+        for (const member of message.members) {
+          this.#remotePlayers.registerMember(member);
+        }
+        this.#history.length = 0;
+        this.#health = 100;
+        this.#isAlive = true;
+        this.#elements.health.textContent = "100";
+        return;
+      }
+      case "playerJoined": {
+        this.#remotePlayers.registerMember(message.member);
+        return;
+      }
+      case "skinChanged": {
+        this.#remotePlayers.setSkin(message.playerId, message.skin);
         return;
       }
       case "damage": {
@@ -122,8 +181,7 @@ export class OnlineSessionController {
         this.#blueScore = message.blueScore;
         this.#redScore = message.redScore;
         if (message.targetId === localId) {
-          this.#isAlive = false;
-          this.#elements.respawn.textContent = "Eliminated. Respawning…";
+          this.#setAlive(false);
         } else if (message.attackerId === localId) {
           this.#elements.feedback.textContent = "Elimination!";
         }
@@ -132,10 +190,10 @@ export class OnlineSessionController {
       }
       case "respawn": {
         if (message.playerId === this.#network.match?.playerId) {
-          this.#isAlive = true;
+          this.#setAlive(true);
           this.#health = 100;
           this.#elements.health.textContent = "100";
-          this.#elements.respawn.textContent = "";
+          this.#history.length = 0;
           this.#player.position.set(
             message.position.x,
             message.position.y + 1.2,
@@ -164,6 +222,7 @@ export class OnlineSessionController {
   /** Publishes input and advances remote-player interpolation. */
   update(nowMs: number): void {
     this.#remotePlayers.update(nowMs);
+    this.#renderTimer(nowMs);
 
     if (nowMs - this.#lastSendMs < INPUT_SEND_INTERVAL_MS) {
       return;
@@ -172,20 +231,24 @@ export class OnlineSessionController {
 
     const movement = this.#isAlive ? this.#getMovement() : { x: 0, z: 0 };
 
+    const sequence = this.#network.takeInputSequence();
     this.#network.sendInput({
-      sequence: this.#network.takeInputSequence(),
+      sequence,
       clientTimeMs: Math.round(nowMs),
       movement: { x: movement.x, y: movement.z },
       aimYaw: this.#getAimYaw(),
       aimPitch: 0
     });
 
-    if (this.#remainingMs > 0) {
-      this.#remainingMs = Math.max(
-        0,
-        this.#remainingMs - INPUT_SEND_INTERVAL_MS
-      );
-      this.#renderTimer();
+    // Remember where prediction put the player when this frame was sent, so a
+    // later snapshot can be compared with the same moment in time.
+    this.#history.push({
+      sequence,
+      x: this.#player.position.x,
+      z: this.#player.position.z
+    });
+    if (this.#history.length > MAX_HISTORY) {
+      this.#history.shift();
     }
   }
 
@@ -193,11 +256,39 @@ export class OnlineSessionController {
     this.#remotePlayers.dispose();
   }
 
+  /** The same team ring every other device draws under this player. */
+  #createTeamRing(scene: Scene, team: Team): void {
+    const ring = MeshBuilder.CreateTorus(
+      "local-team-ring",
+      { diameter: 1.5, thickness: 0.09, tessellation: 24 },
+      scene
+    );
+    ring.parent = this.#player;
+    ring.position.y = -1.17;
+    ring.isPickable = false;
+    const material = new StandardMaterial("local-team-ring-material", scene);
+    material.diffuseColor = Color3.Black();
+    material.emissiveColor = Color3.FromHexString(
+      team === "blue" ? "#57c7ff" : "#ff557c"
+    );
+    material.specularColor = Color3.Black();
+    material.disableLighting = true;
+    ring.material = material;
+  }
+
   #applySnapshot(message: Extract<ServerMessage, { type: "snapshot" }>): void {
     this.#snapshotsApplied += 1;
-    this.#remotePlayers.applySnapshot(message.players, performance.now());
 
     const localId = this.#network.match?.playerId;
+    if (localId !== undefined) {
+      this.#remotePlayers.setLocalPlayerId(localId);
+    }
+    this.#remotePlayers.applySnapshot(
+      message.players,
+      message.serverTimeMs,
+      performance.now()
+    );
+
     if (localId === undefined) {
       return;
     }
@@ -206,24 +297,71 @@ export class OnlineSessionController {
       return;
     }
 
-    this.#isAlive = local.isAlive;
+    this.#setAlive(local.isAlive);
     if (local.health !== this.#health) {
       this.#health = local.health;
       this.#elements.health.textContent = String(this.#health);
     }
-
-    // Snap back only on a meaningful disagreement, so ordinary prediction
-    // jitter does not fight the player's own movement.
-    const dx = local.position.x - this.#player.position.x;
-    const dz = local.position.z - this.#player.position.z;
-    if (Math.hypot(dx, dz) > 1.5) {
-      this.#correctionCount += 1;
-      this.#player.position.set(
-        local.position.x,
-        local.position.y + 1.2,
-        local.position.z
-      );
+    if (local.isAlive) {
+      this.#reconcile(local.position, local.lastProcessedInput);
     }
+  }
+
+  /**
+   * Compares the server's position with where prediction had the player when
+   * the same input was sent. Only genuine disagreement is corrected, and
+   * gently, so latency alone never makes the avatar rubber-band.
+   */
+  #reconcile(
+    server: { readonly x: number; readonly y: number; readonly z: number },
+    lastProcessedInput: number
+  ): void {
+    const predicted =
+      lastProcessedInput > 0
+        ? this.#history.find((entry) => entry.sequence === lastProcessedInput)
+        : undefined;
+
+    const referenceX = predicted?.x ?? this.#player.position.x;
+    const referenceZ = predicted?.z ?? this.#player.position.z;
+    const errorX = server.x - referenceX;
+    const errorZ = server.z - referenceZ;
+    const error = Math.hypot(errorX, errorZ);
+
+    // Without an acknowledged input there is no like-for-like sample; only a
+    // large gap (the initial spawn, a round reset) is worth acting on.
+    const hardLimit = predicted === undefined ? 1.5 : HARD_SNAP_DISTANCE;
+    let shiftX = 0;
+    let shiftZ = 0;
+    if (error > hardLimit) {
+      shiftX = errorX;
+      shiftZ = errorZ;
+      this.#correctionCount += 1;
+    } else if (predicted !== undefined && error > CORRECTION_DEADZONE) {
+      shiftX = errorX * CORRECTION_BLEND;
+      shiftZ = errorZ * CORRECTION_BLEND;
+      this.#correctionCount += 1;
+    }
+    if (shiftX === 0 && shiftZ === 0) {
+      return;
+    }
+
+    this.#player.position.x += shiftX;
+    this.#player.position.z += shiftZ;
+    this.#player.position.y = Math.max(this.#player.position.y, server.y + 1.2);
+    for (const entry of this.#history) {
+      entry.x += shiftX;
+      entry.z += shiftZ;
+    }
+  }
+
+  #setAlive(alive: boolean): void {
+    if (alive === this.#isAlive && this.#elements.respawn.hidden === alive) {
+      return;
+    }
+    this.#isAlive = alive;
+    this.#setLocalVisible(alive);
+    this.#elements.respawn.hidden = alive;
+    this.#elements.respawn.textContent = alive ? "" : "Eliminated. Respawning…";
   }
 
   #renderTracer(
@@ -251,13 +389,23 @@ export class OnlineSessionController {
       this.#phase === "waiting_for_players"
         ? "WAITING FOR PLAYERS"
         : this.#phase === "ended"
-          ? "MATCH OVER"
+          ? this.#winningTeam === null
+            ? "MATCH OVER · DRAW"
+            : `MATCH OVER · ${this.#winningTeam.toUpperCase()} WINS`
           : "ONLINE MATCH";
-    this.#renderTimer();
+    this.#renderTimer(performance.now());
   }
 
-  #renderTimer(): void {
-    const totalSeconds = Math.max(0, Math.round(this.#remainingMs / 1000));
+  #renderTimer(nowMs: number): void {
+    const remainingMs =
+      this.#phase === "waiting_for_players"
+        ? 0
+        : Math.max(0, this.#phaseEndsAtMs - nowMs);
+    const totalSeconds = Math.ceil(remainingMs / 1000);
+    if (totalSeconds === this.#shownSeconds) {
+      return;
+    }
+    this.#shownSeconds = totalSeconds;
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     const text = `${String(minutes)}:${seconds.toString().padStart(2, "0")}`;
