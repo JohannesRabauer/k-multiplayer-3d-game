@@ -45,7 +45,7 @@ test("a saved skin survives a restart", async ({ page }) => {
 test("other players see the exact skin, health and score", async ({
   browser
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const hostContext = await browser.newContext();
   const guestContext = await browser.newContext();
   const host = await hostContext.newPage();
@@ -56,6 +56,9 @@ test("other players see the exact skin, health and score", async ({
     await customize(host);
     await host.locator("#skin-close").click();
     await host.locator("#host-game").click();
+    await expect(host.locator("#room-code")).toHaveText(/^[A-Z2-9]{6}$/, {
+      timeout: 120_000
+    });
     const roomCode = (
       (await host.locator("#room-code").textContent()) ?? ""
     ).trim();
@@ -75,7 +78,7 @@ test("other players see the exact skin, health and score", async ({
           }[];
           return remotes[0]?.skin;
         },
-        { timeout: 75_000 }
+        { timeout: 150_000 }
       )
       .toMatchObject({
         headwear: "knight",

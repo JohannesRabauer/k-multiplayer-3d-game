@@ -17,7 +17,7 @@ export const TICK_INTERVAL_MS = Math.round(1000 / TICK_RATE_HZ);
 /** Most input frames processed per player per tick, bounding catch-up. */
 const MAX_FRAMES_PER_TICK = 8;
 /** A player that stops sending anything for this long is dropped. */
-export const PLAYER_TIMEOUT_MS = 15_000;
+export const PLAYER_TIMEOUT_MS = 20_000;
 
 const MOVE_SPEED = DEFAULT_GAME_CONFIG.movement.speedMetersPerSecond;
 const MAX_HEALTH = DEFAULT_GAME_CONFIG.health.maximum;
