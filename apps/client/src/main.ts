@@ -22,6 +22,7 @@ import {
   type AuthSession
 } from "./auth/FirebaseAuthController";
 import { AimController } from "./game/AimController";
+import { buildCharacter } from "./game/CharacterBuilder";
 import { createBlocktown } from "./game/createBlocktown";
 import {
   addCharacterModel,
@@ -29,6 +30,7 @@ import {
   addVehicleModel,
   addVehiclePropModel
 } from "./game/GameAssets";
+import { loadSkinLibrary } from "./game/skinStorage";
 import { LocalPlayerController } from "./game/LocalPlayerController";
 import { LocalHitscanResolver } from "./game/LocalHitscanResolver";
 import { OfflineCombatController } from "./game/OfflineCombatController";
@@ -47,7 +49,8 @@ import {
   type ConnectionStatus
 } from "./net/NetworkClient";
 import { resolveServerUrl } from "./net/serverUrl";
-import type { ServerMessage } from "@scooter-shooter/protocol";
+import { SkinEditor } from "./ui/SkinEditor";
+import { getActiveSkin, type ServerMessage } from "@scooter-shooter/protocol";
 
 function requireHtmlElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -146,10 +149,64 @@ const roomShare = requireHtmlElement("room-share");
 const roomCodeElement = requireHtmlElement("room-code");
 const roomRosterElement = requireHtmlElement("room-roster");
 
+const skinEditor = new SkinEditor({
+  root: requireHtmlElement("skin-editor"),
+  canvas: (() => {
+    const element = requireHtmlElement("skin-preview");
+    if (!(element instanceof HTMLCanvasElement)) {
+      throw new TypeError("#skin-preview must be a canvas element.");
+    }
+    return element;
+  })(),
+  options: requireHtmlElement("skin-options"),
+  library: requireHtmlElement("skin-library"),
+  nameInput: requireInputElement("skin-name"),
+  message: requireHtmlElement("skin-message"),
+  saveButton: requireButtonElement("skin-save"),
+  saveNewButton: requireButtonElement("skin-save-new"),
+  deleteButton: requireButtonElement("skin-delete"),
+  closeButton: requireButtonElement("skin-close"),
+  turnLeftButton: requireButtonElement("skin-turn-left"),
+  turnRightButton: requireButtonElement("skin-turn-right"),
+  randomButton: requireButtonElement("skin-random")
+});
+requireButtonElement("open-skin-editor").addEventListener("click", () => {
+  skinEditor.open();
+});
+
 let stopGame: (() => void) | undefined;
 let isGameStarting = false;
 let networkMessageSink: ((message: ServerMessage) => void) | undefined;
 let activeNetwork: NetworkClient | undefined;
+/**
+ * Room events that arrive while the scene is still loading. Scores, the match
+ * timer and the roster would otherwise be lost, leaving a late-loading device
+ * showing a different match from everyone else.
+ */
+const pendingNetworkMessages: ServerMessage[] = [];
+const MAX_PENDING_NETWORK_MESSAGES = 256;
+
+function deliverNetworkMessage(message: ServerMessage): void {
+  if (networkMessageSink !== undefined) {
+    networkMessageSink(message);
+    return;
+  }
+  // Snapshots are superseded by the next one, so only events are worth keeping.
+  if (message.type === "snapshot") {
+    return;
+  }
+  pendingNetworkMessages.push(message);
+  if (pendingNetworkMessages.length > MAX_PENDING_NETWORK_MESSAGES) {
+    pendingNetworkMessages.shift();
+  }
+}
+
+function attachNetworkSink(sink: (message: ServerMessage) => void): void {
+  networkMessageSink = sink;
+  for (const message of pendingNetworkMessages.splice(0)) {
+    sink(message);
+  }
+}
 
 function showCompatibilityFailure(message: string): void {
   canvas.hidden = true;
@@ -190,10 +247,10 @@ async function createScene(
   playerMaterial.diffuseColor = Color3.FromHexString("#57c7ff");
   playerMaterial.alpha = 0;
   player.material = playerMaterial;
-  const playerVisual = await addCharacterModel(
+  const playerVisual = buildCharacter(
     scene,
     player,
-    "player",
+    getActiveSkin(loadSkinLibrary()),
     "player-model"
   );
 
@@ -367,9 +424,11 @@ async function createScene(
     map.playAreaMinimum,
     map.playAreaMaximum
   );
+  // Vehicles are local-only objects, so online they stay parked as scenery:
+  // still solid (the server treats them as obstacles) but not drivable.
   const vehicleController = new VehicleController(
     scene,
-    vehicles,
+    isOnline ? [] : vehicles,
     playerController,
     playerVisual,
     vehicleActionButton
@@ -475,13 +534,16 @@ async function createScene(
             getAimYaw: () => {
               const aim = aimController.getAimDirection();
               return Math.atan2(aim.x, aim.z);
+            },
+            setLocalVisible: (visible) => {
+              playerVisual.setEnabled(visible);
             }
           }
         );
   if (onlineSession !== undefined && network !== undefined) {
-    networkMessageSink = (message) => {
+    attachNetworkSink((message) => {
       onlineSession.handleMessage(message);
-    };
+    });
   }
 
   scene.onBeforeRenderObservable.add(() => {
@@ -495,6 +557,11 @@ async function createScene(
         onlineSession.snapshotsApplied
       );
       gameShell.dataset.onlinePhase = onlineSession.phase;
+      gameShell.dataset.onlineRemotes = JSON.stringify(
+        onlineSession.remoteSummary
+      );
+      gameShell.dataset.onlineScore = `${String(onlineSession.scores.blue)}-${String(onlineSession.scores.red)}`;
+      gameShell.dataset.onlineHealth = String(onlineSession.health);
     } else {
       combatController.update(nowMs);
     }
@@ -612,6 +679,7 @@ async function startGame(network?: NetworkClient): Promise<void> {
     engine.stopRenderLoop();
     engine.dispose();
     networkMessageSink = undefined;
+    pendingNetworkMessages.length = 0;
     network?.disconnect();
     gameShell.hidden = true;
     entryScreen.hidden = false;
@@ -715,6 +783,7 @@ function registerOnlineHandlers(
     new NetworkClient({
       serverUrl,
       clientBuild: "web",
+      getSkin: () => getActiveSkin(loadSkinLibrary()),
       getAuthToken: () =>
         authController === null
           ? Promise.resolve(createDevToken())
@@ -726,7 +795,7 @@ function registerOnlineHandlers(
         if (message.type === "playerJoined") {
           roomRosterElement.textContent = `${message.member.displayName} joined.`;
         }
-        networkMessageSink?.(message);
+        deliverNetworkMessage(message);
       }
     });
 

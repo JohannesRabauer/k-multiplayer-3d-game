@@ -14,8 +14,6 @@ import type { Room, RoomPlayer } from "./rooms.js";
 export const TICK_RATE_HZ = 20;
 export const TICK_INTERVAL_MS = Math.round(1000 / TICK_RATE_HZ);
 
-/** Largest time step credited to a single input frame, as an anti-speed guard. */
-const MAX_FRAME_STEP_MS = 60;
 /** Most input frames processed per player per tick, bounding catch-up. */
 const MAX_FRAMES_PER_TICK = 8;
 /** A player that stops sending anything for this long is dropped. */
@@ -29,6 +27,15 @@ const MATCH_DURATION_MS = DEFAULT_GAME_CONFIG.match.durationMs;
 const PISTOL_DAMAGE = DEFAULT_GAME_CONFIG.pistol.damage;
 const PISTOL_RANGE = DEFAULT_GAME_CONFIG.pistol.rangeMeters;
 const MAGAZINE_SIZE = DEFAULT_GAME_CONFIG.pistol.magazineSize;
+
+/** Longest single step any one frame may be credited, regardless of its claim. */
+const MAX_CREDITED_STEP_MS = 100;
+/** Unspent movement time a player can bank, which absorbs network bursts. */
+const MAX_MOVE_BUDGET_MS = 250;
+/** Shots closer together than this share of the fire interval are refused. */
+const FIRE_INTERVAL_TOLERANCE = 0.6;
+/** Every this many ticks the full match state is re-broadcast to the room. */
+const MATCH_STATE_REFRESH_TICKS = TICK_RATE_HZ;
 
 /** A match needs at least this many players before the timer starts. */
 const MIN_PLAYERS_TO_START = DEFAULT_GAME_CONFIG.match.minimumPlayers;
@@ -61,6 +68,25 @@ export function respawnPlayer(
   player.isAlive = true;
   player.respawnAtMs = 0;
   player.lastSeenMs = nowMs;
+  player.pendingInputs.length = 0;
+  player.lastFrameTimeMs = undefined;
+  player.lastBudgetRefillMs = nowMs;
+  player.moveBudgetMs = 0;
+  player.protectedUntilMs = nowMs + DEFAULT_GAME_CONFIG.match.spawnProtectionMs;
+}
+
+function toRespawnMessage(player: RoomPlayer): ServerMessage {
+  return {
+    type: "respawn",
+    playerId: player.playerId,
+    position: {
+      x: round(player.positionX),
+      y: round(player.positionY),
+      z: round(player.positionZ)
+    },
+    yaw: round(player.yaw),
+    protectionEndsAtMs: player.protectedUntilMs
+  };
 }
 
 export function toPlayerSnapshot(player: RoomPlayer): PlayerSnapshot {
@@ -102,24 +128,20 @@ export function stepRoom(room: Room, nowMs: number): readonly ServerMessage[] {
     if (!player.isAlive) {
       if (player.respawnAtMs > 0 && nowMs >= player.respawnAtMs) {
         respawnPlayer(room, player, nowMs);
-        messages.push({
-          type: "respawn",
-          playerId: player.playerId,
-          position: {
-            x: round(player.positionX),
-            y: round(player.positionY),
-            z: round(player.positionZ)
-          },
-          yaw: round(player.yaw),
-          protectionEndsAtMs:
-            nowMs + DEFAULT_GAME_CONFIG.match.spawnProtectionMs
-        });
+        messages.push(toRespawnMessage(player));
       }
       player.pendingInputs.length = 0;
       continue;
     }
 
-    applyInputs(player);
+    applyInputs(player, nowMs);
+  }
+
+  if (
+    room.tick % MATCH_STATE_REFRESH_TICKS === 0 &&
+    !messages.some((message) => message.type === "matchState")
+  ) {
+    messages.push(buildMatchState(room, nowMs));
   }
 
   messages.push({
@@ -132,7 +154,15 @@ export function stepRoom(room: Room, nowMs: number): readonly ServerMessage[] {
   return messages;
 }
 
-function applyInputs(player: RoomPlayer): void {
+function applyInputs(player: RoomPlayer, nowMs: number): void {
+  // Movement time is earned from the server's own clock, so a client can
+  // neither run faster than real time nor lose time to a late packet.
+  player.moveBudgetMs = Math.min(
+    MAX_MOVE_BUDGET_MS,
+    player.moveBudgetMs + Math.max(0, nowMs - player.lastBudgetRefillMs)
+  );
+  player.lastBudgetRefillMs = nowMs;
+
   const frames = player.pendingInputs.splice(0, MAX_FRAMES_PER_TICK);
   if (frames.length === 0) {
     player.velocityX = 0;
@@ -140,7 +170,6 @@ function applyInputs(player: RoomPlayer): void {
     return;
   }
 
-  let previousTimeMs: number | undefined;
   let totalX = 0;
   let totalZ = 0;
 
@@ -149,12 +178,18 @@ function applyInputs(player: RoomPlayer): void {
       continue;
     }
 
+    // The step is the client's own gap between frames, measured across ticks
+    // so a frame that arrives alone is still credited the time it represents.
     const rawStep =
-      previousTimeMs === undefined
+      player.lastFrameTimeMs === undefined
         ? TICK_INTERVAL_MS
-        : frame.clientTimeMs - previousTimeMs;
-    previousTimeMs = frame.clientTimeMs;
-    const stepMs = clamp(rawStep, 0, MAX_FRAME_STEP_MS);
+        : frame.clientTimeMs - player.lastFrameTimeMs;
+    player.lastFrameTimeMs = frame.clientTimeMs;
+    const stepMs = Math.min(
+      clamp(rawStep, 0, MAX_CREDITED_STEP_MS),
+      player.moveBudgetMs
+    );
+    player.moveBudgetMs -= stepMs;
 
     // Never trust the magnitude a client sends; a unit vector is the most it
     // can ever be worth.
@@ -214,6 +249,13 @@ export function resolveFire(
     return [rejected];
   }
 
+  if (
+    nowMs - shooter.lastFireMs <
+    DEFAULT_GAME_CONFIG.pistol.fireIntervalMs * FIRE_INTERVAL_TOLERANCE
+  ) {
+    return [rejected];
+  }
+
   const length = Math.hypot(request.aimDirection.x, request.aimDirection.z);
   if (length < 1e-6) {
     return [rejected];
@@ -221,6 +263,7 @@ export function resolveFire(
   const directionX = request.aimDirection.x / length;
   const directionZ = request.aimDirection.z / length;
 
+  shooter.lastFireMs = nowMs;
   shooter.ammo = Math.max(0, shooter.ammo - 1);
   if (shooter.ammo === 0) {
     shooter.ammo = MAGAZINE_SIZE;
@@ -242,7 +285,8 @@ export function resolveFire(
     if (
       candidate === shooter ||
       !candidate.isAlive ||
-      candidate.team === shooter.team
+      candidate.team === shooter.team ||
+      nowMs < candidate.protectedUntilMs
     ) {
       continue;
     }
@@ -328,6 +372,7 @@ function advancePhase(
         room.phaseEndsAtMs = nowMs + MATCH_DURATION_MS;
         for (const player of room.players.values()) {
           respawnPlayer(room, player, nowMs);
+          messages.push(toRespawnMessage(player));
         }
       }
       break;
@@ -363,6 +408,7 @@ function advancePhase(
           room.phase === "in_progress" ? nowMs + MATCH_DURATION_MS : 0;
         for (const player of room.players.values()) {
           respawnPlayer(room, player, nowMs);
+          messages.push(toRespawnMessage(player));
         }
       }
       break;

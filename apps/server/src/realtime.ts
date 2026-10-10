@@ -5,7 +5,8 @@ import {
   normalizeRoomCode,
   parseClientMessage,
   type ClientMessage,
-  type ServerMessage
+  type ServerMessage,
+  type Skin
 } from "@scooter-shooter/protocol";
 import { WebSocketServer, type WebSocket } from "ws";
 
@@ -21,6 +22,7 @@ import {
 import {
   RoomRegistry,
   toRoomMember,
+  type PlayerIdentity,
   type Room,
   type RoomPlayer
 } from "./rooms.js";
@@ -40,6 +42,7 @@ export interface RealtimeGateway {
 interface Connection {
   readonly socket: WebSocket;
   identity: VerifiedIdentity | undefined;
+  skin: Skin | undefined;
   room: Room | undefined;
   player: RoomPlayer | undefined;
   lastSeenMs: number;
@@ -124,7 +127,7 @@ export function attachRealtimeGateway(
     if (message.type === "joinWithCode") {
       result = registry.joinByCode(
         normalizeRoomCode(message.roomCode),
-        identity,
+        withSkin(identity, connection.skin),
         nowMs
       );
     } else if (message.type === "createRoom") {
@@ -132,9 +135,13 @@ export function attachRealtimeGateway(
       result =
         room === undefined
           ? ({ ok: false, reason: "server_full" } as const)
-          : registry.join(room, identity, nowMs);
+          : registry.join(room, withSkin(identity, connection.skin), nowMs);
     } else {
-      result = joinQuickPlay(registry, identity, nowMs);
+      result = joinQuickPlay(
+        registry,
+        withSkin(identity, connection.skin),
+        nowMs
+      );
     }
 
     if (!result.ok) {
@@ -238,6 +245,20 @@ export function attachRealtimeGateway(
         return;
       }
 
+      case "setSkin": {
+        connection.skin = message.skin;
+        const { room, player } = connection;
+        if (room !== undefined && player !== undefined) {
+          player.skin = message.skin;
+          broadcast(room, {
+            type: "skinChanged",
+            playerId: player.playerId,
+            skin: message.skin
+          });
+        }
+        return;
+      }
+
       case "inputBatch": {
         const player = connection.player;
         if (player === undefined) {
@@ -303,7 +324,8 @@ export function attachRealtimeGateway(
       identity: undefined,
       room: undefined,
       player: undefined,
-      lastSeenMs: now()
+      lastSeenMs: now(),
+      skin: undefined
     };
     connections.add(connection);
 
@@ -383,10 +405,17 @@ export function attachRealtimeGateway(
   };
 }
 
+function withSkin(
+  identity: VerifiedIdentity,
+  skin: Skin | undefined
+): VerifiedIdentity & { readonly skin: Skin | undefined } {
+  return { ...identity, skin };
+}
+
 /** Fills the emptiest room that still has space, otherwise opens a new one. */
 function joinQuickPlay(
   registry: RoomRegistry,
-  identity: VerifiedIdentity,
+  identity: PlayerIdentity,
   nowMs: number
 ) {
   const candidates = registry

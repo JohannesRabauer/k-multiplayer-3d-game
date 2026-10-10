@@ -5,6 +5,7 @@ import {
   type ClientMessage,
   type RoomMember,
   type ServerMessage,
+  type Skin,
   type Team
 } from "@scooter-shooter/protocol";
 
@@ -23,6 +24,8 @@ export interface NetworkClientOptions {
   /** Supplies a fresh Firebase ID token for every connection attempt. */
   readonly getAuthToken: () => Promise<string>;
   readonly clientBuild: string;
+  /** The skin to present to other players; read on every (re)connection. */
+  readonly getSkin?: () => Skin;
   readonly onStatusChange?: (status: ConnectionStatus, detail?: string) => void;
   readonly onMessage?: (message: ServerMessage) => void;
 }
@@ -212,6 +215,12 @@ export class NetworkClient {
       (message) => message.type === "welcome",
       "The server refused the connection."
     );
+    // The skin must be known before joining so that room members always see
+    // the correct look from the first snapshot.
+    const skin = this.#options.getSkin?.();
+    if (skin !== undefined) {
+      this.#send({ type: "setSkin", skin });
+    }
     this.#startHeartbeat();
     this.#reconnectAttempts = 0;
   }

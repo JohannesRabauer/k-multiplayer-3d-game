@@ -35,6 +35,9 @@
               <option value="8">8 bots</option>
             </select>
           </label>
+          <button id="open-skin-editor" class="button button--secondary">
+            Customize character
+          </button>
           <div id="signed-out-actions" class="entry-actions">
             <button id="guest-sign-in" class="button button--primary">
               Continue as guest
@@ -109,6 +112,81 @@
           <p class="online-note">
             Sign in to host a game, then share the code so a friend can join.
           </p>
+        </div>
+      </section>
+      <section
+        id="skin-editor"
+        class="skin-editor"
+        aria-label="Character editor"
+        hidden
+      >
+        <div class="skin-editor__panel">
+          <header class="skin-editor__header">
+            <h2>Your character</h2>
+            <button id="skin-close" class="button button--quiet button--small">
+              Back
+            </button>
+          </header>
+          <div class="skin-editor__body">
+            <div class="skin-editor__preview">
+              <canvas id="skin-preview" aria-label="Character preview"></canvas>
+              <div class="skin-editor__turn">
+                <button
+                  id="skin-turn-left"
+                  class="button button--quiet button--small"
+                  aria-label="Turn left"
+                >
+                  ⟲
+                </button>
+                <button
+                  id="skin-turn-right"
+                  class="button button--quiet button--small"
+                  aria-label="Turn right"
+                >
+                  ⟳
+                </button>
+                <button
+                  id="skin-random"
+                  class="button button--quiet button--small"
+                >
+                  Surprise me
+                </button>
+              </div>
+            </div>
+            <div class="skin-editor__controls">
+              <div id="skin-options"></div>
+              <div class="skin-editor__save">
+                <label class="skin-editor__name" for="skin-name">
+                  <span>Skin name</span>
+                  <input
+                    id="skin-name"
+                    type="text"
+                    maxlength="24"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </label>
+                <div class="skin-editor__buttons">
+                  <button id="skin-save" class="button button--primary">
+                    Save skin
+                  </button>
+                  <button id="skin-save-new" class="button button--secondary">
+                    Save as new
+                  </button>
+                  <button id="skin-delete" class="button button--quiet">
+                    Delete
+                  </button>
+                </div>
+                <output
+                  id="skin-message"
+                  class="online-message"
+                  aria-live="polite"
+                ></output>
+                <h3>Saved skins</h3>
+                <div id="skin-library" class="skin-editor__library"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
       <section id="game-shell" class="game-shell" hidden>

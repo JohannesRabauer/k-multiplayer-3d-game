@@ -113,6 +113,24 @@ export const ARENA_OBSTACLES: readonly ArenaObstacle[] = [
     halfWidth: 0.6,
     halfDepth: 1.5,
     height: 1
+  },
+  // Parked cars. They are not drivable online, so every player collides with
+  // the same two boxes the client draws them as.
+  {
+    name: "parked-sedan",
+    centerX: -15.5,
+    centerZ: -3,
+    halfWidth: 1.1,
+    halfDepth: 1.6,
+    height: 1.3
+  },
+  {
+    name: "parked-hatchback",
+    centerX: 10,
+    centerZ: 3,
+    halfWidth: 1.1,
+    halfDepth: 1.6,
+    height: 1.3
   }
 ];
 

@@ -1,10 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
 import {
+  DEFAULT_SKIN,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   type InputFrame,
   type RoomMember,
+  type Skin,
   type Team
 } from "@scooter-shooter/protocol";
 
@@ -13,6 +15,7 @@ export interface RoomPlayer {
   readonly accountId: string;
   readonly displayName: string;
   readonly reconnectToken: string;
+  skin: Skin;
   team: Team;
   positionX: number;
   positionY: number;
@@ -28,6 +31,13 @@ export interface RoomPlayer {
   respawnAtMs: number;
   lastSeenMs: number;
   pendingInputs: InputFrame[];
+  /** Client clock of the last consumed input frame, so steps span ticks. */
+  lastFrameTimeMs: number | undefined;
+  /** Movement time the player may still spend; refilled from the server clock. */
+  moveBudgetMs: number;
+  lastBudgetRefillMs: number;
+  lastFireMs: number;
+  protectedUntilMs: number;
 }
 
 export interface Room {
@@ -58,6 +68,12 @@ export const DEFAULT_ROOM_REGISTRY_OPTIONS: RoomRegistryOptions = {
   emptyRoomTtlMs: 120_000
 };
 
+export interface PlayerIdentity {
+  readonly accountId: string;
+  readonly displayName: string;
+  readonly skin?: Skin | undefined;
+}
+
 export type JoinFailure = "room_not_found" | "room_unavailable" | "server_full";
 
 export type JoinResult =
@@ -77,7 +93,8 @@ export function toRoomMember(player: RoomPlayer): RoomMember {
   return {
     playerId: player.playerId,
     displayName: player.displayName,
-    team: player.team
+    team: player.team,
+    skin: player.skin
   };
 }
 
@@ -139,11 +156,7 @@ export class RoomRegistry {
     return room;
   }
 
-  join(
-    room: Room,
-    identity: { readonly accountId: string; readonly displayName: string },
-    nowMs: number
-  ): JoinResult {
+  join(room: Room, identity: PlayerIdentity, nowMs: number): JoinResult {
     if (room.players.size >= this.#options.maxPlayersPerRoom) {
       return { ok: false, reason: "room_unavailable" };
     }
@@ -153,6 +166,7 @@ export class RoomRegistry {
       accountId: identity.accountId,
       displayName: identity.displayName,
       reconnectToken: randomBytes(24).toString("hex"),
+      skin: identity.skin ?? { ...DEFAULT_SKIN },
       team: this.#pickTeam(room),
       positionX: 0,
       positionY: 0,
@@ -167,7 +181,12 @@ export class RoomRegistry {
       lastProcessedInput: 0,
       respawnAtMs: 0,
       lastSeenMs: nowMs,
-      pendingInputs: []
+      pendingInputs: [],
+      lastFrameTimeMs: undefined,
+      moveBudgetMs: 0,
+      lastBudgetRefillMs: nowMs,
+      lastFireMs: 0,
+      protectedUntilMs: 0
     };
 
     room.players.set(player.playerId, player);
@@ -177,7 +196,7 @@ export class RoomRegistry {
 
   joinByCode(
     roomCode: string,
-    identity: { readonly accountId: string; readonly displayName: string },
+    identity: PlayerIdentity,
     nowMs: number
   ): JoinResult {
     const room = this.#roomsByCode.get(roomCode);
