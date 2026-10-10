@@ -3,6 +3,7 @@ import { z } from "zod";
 import { skinSchema } from "./skin.js";
 
 export * from "./skin.js";
+export * from "./skinLibrary.js";
 
 export const PROTOCOL_VERSION = 1 as const;
 

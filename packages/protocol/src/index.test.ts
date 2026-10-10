@@ -2,6 +2,14 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
 import {
+  MAX_SAVED_SKINS,
+  createDefaultLibrary,
+  getActiveSkin,
+  parseSkinLibrary,
+  removeSkin,
+  selectSkin,
+  serializeSkinLibrary,
+  upsertSkin,
   DEFAULT_SKIN,
   PROTOCOL_VERSION,
   parseSkinOrDefault,
@@ -125,5 +133,50 @@ void describe("skins", () => {
       ...custom,
       topColor: "#aabbcc"
     });
+  });
+});
+
+void describe("skin library", () => {
+  void it("round-trips a saved skin through serialisation (restart)", () => {
+    const custom = {
+      ...DEFAULT_SKIN,
+      headwear: "tophat" as const,
+      topColor: "#112233"
+    };
+    const library = upsertSkin(createDefaultLibrary(), {
+      id: "mine",
+      name: "Night out",
+      skin: custom
+    });
+    const restored = parseSkinLibrary(serializeSkinLibrary(library));
+    assert.equal(restored.activeId, "mine");
+    assert.deepEqual(getActiveSkin(restored), custom);
+    assert.equal(restored.skins.length, 2);
+  });
+
+  void it("recovers from corrupt storage", () => {
+    assert.deepEqual(parseSkinLibrary("{not json"), createDefaultLibrary());
+    assert.deepEqual(parseSkinLibrary(null), createDefaultLibrary());
+    assert.deepEqual(
+      parseSkinLibrary(
+        JSON.stringify({ version: 1, activeId: "x", skins: [] })
+      ),
+      createDefaultLibrary()
+    );
+  });
+
+  void it("keeps one skin when the last is removed and caps the library", () => {
+    let library = createDefaultLibrary();
+    library = removeSkin(library, "default");
+    assert.equal(library.skins.length, 1);
+    for (let index = 0; index < 20; index += 1) {
+      library = upsertSkin(library, {
+        id: `s${String(index)}`,
+        name: "x",
+        skin: DEFAULT_SKIN
+      });
+    }
+    assert.equal(library.skins.length, MAX_SAVED_SKINS);
+    assert.equal(selectSkin(library, "missing").activeId, library.activeId);
   });
 });

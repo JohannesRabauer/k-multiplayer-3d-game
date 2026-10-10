@@ -446,6 +446,141 @@ void describe("shared match state", () => {
     guest.close();
   });
 
+  void it("shows both players the same hits, eliminations, scores and respawn", async () => {
+    const { host, guest, hostJoin, guestJoin } = await pair("combat-1");
+    await host.waitFor("snapshot");
+
+    // Step out of the parked car's lane, then walk towards the guest's spawn.
+    let clientTimeMs = Date.now();
+    let sequence = 0;
+    const walk = async (x: number, y: number, frames: number) => {
+      for (let frame = 0; frame < frames; frame += 1) {
+        sequence += 1;
+        clientTimeMs += 50;
+        host.send({
+          type: "inputBatch",
+          frames: [
+            {
+              sequence,
+              clientTimeMs,
+              movement: { x, y },
+              aimYaw: Math.PI / 2,
+              aimPitch: 0
+            }
+          ]
+        });
+        await delay(50);
+      }
+    };
+    await walk(0, 1, 12);
+    await walk(1, 0, 20);
+    await delay(250);
+
+    const snapshotOf = (client: TestClient) =>
+      client.received
+        .filter(
+          (message): message is Extract<ServerMessage, { type: "snapshot" }> =>
+            message.type === "snapshot"
+        )
+        .at(-1);
+    const players = snapshotOf(host)?.players ?? [];
+    const from = players.find(
+      (player) => player.playerId === hostJoin.playerId
+    );
+    const to = players.find((player) => player.playerId === guestJoin.playerId);
+    assert.ok(from && to);
+    const aim = {
+      x: to.position.x - from.position.x,
+      z: to.position.z - from.position.z
+    };
+
+    // Keep firing along the lane until the guest is eliminated.
+    const eliminated = guest.waitFor("elimination", 15_000);
+    let shot = 100;
+    const shooter = setInterval(() => {
+      shot += 1;
+      host.send({
+        type: "fireIntent",
+        inputSequence: shot,
+        clientShotTimeMs: Date.now(),
+        aimOrigin: { x: 0, y: 1, z: 0 },
+        aimDirection: { x: aim.x, y: 0, z: aim.z }
+      });
+    }, 380);
+    const elimination = await eliminated.finally(() => {
+      clearInterval(shooter);
+    });
+    await delay(200);
+
+    const events = (client: TestClient) =>
+      client.received.filter(
+        (message) =>
+          message.type === "damage" ||
+          message.type === "elimination" ||
+          message.type === "shotResult"
+      );
+    assert.deepEqual(events(host), events(guest));
+    assert.equal(elimination.attackerId, hostJoin.playerId);
+    assert.equal(elimination.targetId, guestJoin.playerId);
+    assert.equal(elimination.blueScore, 1);
+    assert.equal(elimination.redScore, 0);
+
+    const damages = guest.received.filter(
+      (message): message is Extract<ServerMessage, { type: "damage" }> =>
+        message.type === "damage"
+    );
+    let health = 100;
+    for (const damage of damages) {
+      health -= damage.amount;
+      assert.equal(damage.remainingHealth, Math.max(0, health));
+    }
+    assert.equal(health <= 0, true);
+
+    // The next periodic state carries the same score on both devices.
+    await delay(1200);
+    const lastState = (client: TestClient) =>
+      client.received
+        .filter(
+          (
+            message
+          ): message is Extract<ServerMessage, { type: "matchState" }> =>
+            message.type === "matchState"
+        )
+        .at(-1);
+    assert.equal(lastState(host)?.blueScore, 1);
+    assert.equal(lastState(guest)?.blueScore, 1);
+
+    // After the respawn delay the guest is alive again at full health.
+    const respawnedAt = Date.now() + 8_000;
+    const respawned = () =>
+      guest.received.some(
+        (message) =>
+          message.type === "respawn" &&
+          message.playerId === guestJoin.playerId &&
+          guest.received.indexOf(message) > guest.received.indexOf(elimination)
+      );
+    while (!respawned() && Date.now() < respawnedAt) {
+      await delay(100);
+    }
+    assert.equal(respawned(), true, "the guest should respawn after the delay");
+    await delay(300);
+    const latest = guest.received
+      .filter(
+        (message): message is Extract<ServerMessage, { type: "snapshot" }> =>
+          message.type === "snapshot"
+      )
+      .at(-1);
+    const guestState = latest?.players.find(
+      (player) => player.playerId === guestJoin.playerId
+    );
+    assert.ok(guestState, "the guest should be in the snapshot");
+    assert.equal(guestState.isAlive, true);
+    assert.equal(guestState.health, 100);
+
+    host.close();
+    guest.close();
+  });
+
   void it("re-broadcasts the match state so late or missed updates heal", async () => {
     const { host, guest } = await pair("state-1");
     await delay(1300);
