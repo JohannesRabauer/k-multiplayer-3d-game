@@ -1,9 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import { getParkingSlot } from "@scooter-shooter/simulation";
 import {
+  DEFAULT_CAR,
   DEFAULT_SKIN,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
+  type CarDesign,
   type InputFrame,
   type RoomMember,
   type Skin,
@@ -16,6 +19,14 @@ export interface RoomPlayer {
   readonly displayName: string;
   readonly reconnectToken: string;
   skin: Skin;
+  car: CarDesign;
+  /** Bay the car is assigned to; its starting and respawn position. */
+  carSlot: number;
+  /** Where the car stands (or, while driving, is). */
+  carX: number;
+  carZ: number;
+  carYaw: number;
+  driving: boolean;
   team: Team;
   positionX: number;
   positionY: number;
@@ -72,6 +83,7 @@ export interface PlayerIdentity {
   readonly accountId: string;
   readonly displayName: string;
   readonly skin?: Skin | undefined;
+  readonly car?: CarDesign | undefined;
 }
 
 export type JoinFailure = "room_not_found" | "room_unavailable" | "server_full";
@@ -94,7 +106,9 @@ export function toRoomMember(player: RoomPlayer): RoomMember {
     playerId: player.playerId,
     displayName: player.displayName,
     team: player.team,
-    skin: player.skin
+    skin: player.skin,
+    car: player.car,
+    carSlot: player.carSlot
   };
 }
 
@@ -167,6 +181,9 @@ export class RoomRegistry {
       displayName: identity.displayName,
       reconnectToken: randomBytes(24).toString("hex"),
       skin: identity.skin ?? { ...DEFAULT_SKIN },
+      car: identity.car ?? { ...DEFAULT_CAR },
+      ...this.#assignCarSlot(room),
+      driving: false,
       team: this.#pickTeam(room),
       positionX: 0,
       positionY: 0,
@@ -223,6 +240,25 @@ export class RoomRegistry {
       }
     }
     return reaped;
+  }
+
+  /** The lowest bay no other player in the room is using. */
+  #assignCarSlot(room: Room): {
+    carSlot: number;
+    carX: number;
+    carZ: number;
+    carYaw: number;
+  } {
+    const taken = new Set<number>();
+    for (const player of room.players.values()) {
+      taken.add(player.carSlot);
+    }
+    let carSlot = 0;
+    while (taken.has(carSlot)) {
+      carSlot += 1;
+    }
+    const bay = getParkingSlot(carSlot);
+    return { carSlot, carX: bay.x, carZ: bay.z, carYaw: bay.yaw };
   }
 
   /** Keeps teams as even as possible, favouring blue on a tie. */

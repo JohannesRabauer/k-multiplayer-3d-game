@@ -5,6 +5,11 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import {
+  BLUE_SPAWNS,
+  PARKING_SLOTS,
+  RED_SPAWNS
+} from "@scooter-shooter/simulation";
 
 export interface BlocktownMap {
   readonly blueSpawnPositions: readonly [Vector3, Vector3];
@@ -41,6 +46,8 @@ function createMaterials(scene: Scene) {
     grass: createMaterial("blocktown-grass", "#52b788"),
     red: createMaterial("blocktown-red", "#ff557c"),
     roof: createMaterial("blocktown-roof", "#754668"),
+    bay: createMaterial("blocktown-bay", "#4d5d7e"),
+    line: createMaterial("blocktown-line", "#f4f1de"),
     sidewalk: createMaterial("blocktown-sidewalk", "#9aa5b1")
   };
 }
@@ -227,13 +234,40 @@ export function createBlocktown(scene: Scene): BlocktownMap {
   ];
   boundaryDefinitions.forEach(createBox);
 
+  // Painted parking bays. They are decoration only; the cars themselves are
+  // collided by the shared simulation.
+  PARKING_SLOTS.forEach((slot, index) => {
+    const bay = MeshBuilder.CreateBox(
+      `parking-bay-${String(index + 1)}`,
+      { width: 4, height: 0.01, depth: 2.5 },
+      scene
+    );
+    bay.position.set(slot.x, 0.065, slot.z);
+    bay.material = materials.bay;
+    bay.parent = root;
+    bay.freezeWorldMatrix();
+    for (const side of [-1, 1]) {
+      const line = MeshBuilder.CreateBox(
+        `parking-line-${String(index + 1)}-${String(side)}`,
+        { width: 4, height: 0.012, depth: 0.08 },
+        scene
+      );
+      line.position.set(slot.x, 0.07, slot.z + side * 1.25);
+      line.material = materials.line;
+      line.parent = root;
+      line.freezeWorldMatrix();
+    }
+  });
+
+  const toVector = (spawn: { x: number; z: number }): Vector3 =>
+    new Vector3(spawn.x, 0.1, spawn.z);
   const blueSpawnPositions = [
-    new Vector3(-19, 0.1, -3),
-    new Vector3(-19, 0.1, 3)
+    toVector(BLUE_SPAWNS[0] ?? { x: -21, z: -8 }),
+    toVector(BLUE_SPAWNS[1] ?? { x: -21, z: 8 })
   ] as const;
   const redSpawnPositions = [
-    new Vector3(19, 0.1, -3),
-    new Vector3(19, 0.1, 3)
+    toVector(RED_SPAWNS[0] ?? { x: 21, z: -8 }),
+    toVector(RED_SPAWNS[1] ?? { x: 21, z: 8 })
   ] as const;
 
   for (const [team, positions] of [

@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
 
 import {
+  DEFAULT_CAR,
   DEFAULT_SKIN,
   PROTOCOL_VERSION,
   parseServerMessage,
@@ -450,19 +451,24 @@ void describe("shared match state", () => {
     const { host, guest, hostJoin, guestJoin } = await pair("combat-1");
     await host.waitFor("snapshot");
 
-    // Step out of the parked car's lane, then walk towards the guest's spawn.
-    let clientTimeMs = Date.now();
-    let sequence = 0;
-    const walk = async (x: number, y: number, frames: number) => {
+    // Both spawn in the side alleys, behind the buildings. Walk each out to
+    // the middle of the main road, then the host heads towards the guest.
+    const walk = async (
+      client: TestClient,
+      clock: { sequence: number; clientTimeMs: number },
+      x: number,
+      y: number,
+      frames: number
+    ) => {
       for (let frame = 0; frame < frames; frame += 1) {
-        sequence += 1;
-        clientTimeMs += 50;
-        host.send({
+        clock.sequence += 1;
+        clock.clientTimeMs += 50;
+        client.send({
           type: "inputBatch",
           frames: [
             {
-              sequence,
-              clientTimeMs,
+              sequence: clock.sequence,
+              clientTimeMs: clock.clientTimeMs,
               movement: { x, y },
               aimYaw: Math.PI / 2,
               aimPitch: 0
@@ -472,8 +478,13 @@ void describe("shared match state", () => {
         await delay(50);
       }
     };
-    await walk(0, 1, 12);
-    await walk(1, 0, 20);
+    const hostClock = { sequence: 0, clientTimeMs: Date.now() };
+    const guestClock = { sequence: 0, clientTimeMs: Date.now() };
+    await Promise.all([
+      walk(host, hostClock, 0, 1, 28),
+      walk(guest, guestClock, 0, 1, 28)
+    ]);
+    await walk(host, hostClock, 1, 0, 40);
     await delay(250);
 
     const snapshotOf = (client: TestClient) =>
@@ -577,6 +588,144 @@ void describe("shared match state", () => {
     assert.equal(guestState.isAlive, true);
     assert.equal(guestState.health, 100);
 
+    host.close();
+    guest.close();
+  });
+
+  void it("gives every player their own bay and shares each car design", async () => {
+    const car = {
+      ...DEFAULT_CAR,
+      bodyStyle: "pickup" as const,
+      paintColor: "#12ab34",
+      rims: "turbo" as const,
+      spoiler: "tall" as const,
+      roof: "skibox" as const,
+      stripes: "double" as const,
+      lights: "neon" as const
+    };
+    const host = await TestClient.connect(socketUrl);
+    await host.handshake("car-host", "Host");
+    host.send({ type: "setCar", car });
+    host.send({ type: "createRoom" });
+    const hostJoin = await host.waitFor("joinAccepted");
+
+    const guest = await TestClient.connect(socketUrl);
+    await guest.handshake("car-guest", "Guest");
+    guest.send({ type: "joinWithCode", roomCode: hostJoin.roomCode });
+    const guestJoin = await guest.waitFor("joinAccepted");
+
+    const hostMember = guestJoin.members.find((m) => m.displayName === "Host");
+    const guestMember = guestJoin.members.find(
+      (m) => m.displayName === "Guest"
+    );
+    assert.ok(hostMember && guestMember);
+    assert.notEqual(hostMember.carSlot, guestMember.carSlot);
+    assert.deepEqual(hostMember.car, car);
+    assert.deepEqual(guestMember.car, DEFAULT_CAR);
+
+    guest.send({ type: "setCar", car });
+    const changed = await host.waitFor("carChanged");
+    assert.equal(changed.playerId, guestJoin.playerId);
+    assert.deepEqual(changed.car, car);
+
+    const snapshot = await host.waitFor("snapshot");
+    const slots = new Set(
+      snapshot.players.map(
+        (player) => `${String(player.vehicle?.x)},${String(player.vehicle?.z)}`
+      )
+    );
+    assert.equal(slots.size, 2, "parked cars must not share a spot");
+
+    host.close();
+    guest.close();
+  });
+
+  void it("lets a player drive only from next to their own car", async () => {
+    const { host, guest, hostJoin } = await pair("drive-1");
+    const snapshotOf = () =>
+      host.received
+        .filter(
+          (message): message is Extract<ServerMessage, { type: "snapshot" }> =>
+            message.type === "snapshot"
+        )
+        .at(-1)
+        ?.players.find((player) => player.playerId === hostJoin.playerId);
+    await host.waitFor("snapshot");
+    await delay(100);
+    const start = snapshotOf();
+    assert.ok(start);
+    assert.equal(start.vehicle?.driving, false);
+
+    // The spawn is in a side alley, far from the car: the request is refused.
+    let clientTimeMs = Date.now();
+    let sequence = 0;
+    const send = async (driving: boolean, x: number, y: number) => {
+      sequence += 1;
+      clientTimeMs += 50;
+      host.send({
+        type: "inputBatch",
+        frames: [
+          {
+            sequence,
+            clientTimeMs,
+            movement: { x, y },
+            aimYaw: 0,
+            aimPitch: 0,
+            driving,
+            vehicleYaw: 0
+          }
+        ]
+      });
+      await delay(50);
+    };
+    await send(true, 0, 0);
+    await delay(150);
+    assert.equal(snapshotOf()?.vehicle?.driving, false);
+
+    // Walk to the car's bay, then get in and drive faster than walking.
+    const car = snapshotOf()?.vehicle;
+    assert.ok(car);
+    for (let frame = 0; frame < 60; frame += 1) {
+      const here = snapshotOf()?.position;
+      assert.ok(here);
+      const dx = car.x - here.x;
+      const dz = car.z - here.z;
+      if (Math.hypot(dx, dz) < 3) {
+        break;
+      }
+      const length = Math.hypot(dx, dz);
+      await send(false, dx / length, dz / length);
+    }
+    await send(true, 0, 0);
+    await delay(150);
+    assert.equal(snapshotOf()?.vehicle?.driving, true);
+
+    const before = snapshotOf()?.position;
+    assert.ok(before);
+    for (let frame = 0; frame < 10; frame += 1) {
+      await send(true, 0, -1);
+    }
+    await delay(150);
+    const after = snapshotOf()?.position;
+    assert.ok(after);
+    const driven = Math.hypot(after.x - before.x, after.z - before.z);
+    assert.ok(driven > 2.9, `driving covered ${String(driven)} m`);
+
+    // Getting out leaves the car standing and the player beside it.
+    await send(false, 0, 0);
+    await delay(150);
+    const out = snapshotOf();
+    assert.ok(out?.vehicle);
+    const parked = out.vehicle;
+    const distance = Math.hypot(
+      out.position.x - parked.x,
+      out.position.z - parked.z
+    );
+    assert.equal(parked.driving, false);
+    assert.ok(
+      distance > 1.5,
+      `driver stands ${String(distance)} m from the car`
+    );
     host.close();
     guest.close();
   });

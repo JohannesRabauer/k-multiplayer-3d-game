@@ -23,12 +23,37 @@ export interface ArenaSpawn {
   readonly yaw: number;
 }
 
-/** Half-extents of the walkable floor, inside the boundary walls. */
-export const ARENA_HALF_WIDTH = 23.25;
-export const ARENA_HALF_DEPTH = 17.25;
-
 /** Radius of a player capsule, used for collision push-out. */
 export const PLAYER_RADIUS = 0.55;
+
+/** Inner faces of the boundary walls the client draws. */
+export const ARENA_WALL_X = 23.5;
+export const ARENA_WALL_Z = 17.5;
+
+/** Half-extents of the area a player's centre may occupy. */
+export const ARENA_HALF_WIDTH = ARENA_WALL_X - PLAYER_RADIUS;
+export const ARENA_HALF_DEPTH = ARENA_WALL_Z - PLAYER_RADIUS;
+
+/** A circular obstacle on the floor plane, e.g. one end of a parked car. */
+export interface CircleObstacle {
+  readonly x: number;
+  readonly z: number;
+  readonly radius: number;
+}
+
+/**
+ * A car is collided as a capsule made of two circles, one near each end. That
+ * hugs a 1.8 x 3.4 m body far better than a single circle and, unlike a box,
+ * does not depend on the heading to stay axis aligned.
+ */
+export const CAR_CIRCLE_RADIUS = 1;
+export const CAR_CIRCLE_OFFSET = 0.7;
+/** Speed of a driven car relative to walking. */
+export const VEHICLE_SPEED_MULTIPLIER = 1.75;
+/** How close a player must be to a car to get in. */
+export const VEHICLE_ENTER_DISTANCE = 4;
+/** Cars a room can park; one bay per player. */
+export const MAX_PARKING_SLOTS = 8;
 
 /** Height a shot travels at, measured from the floor. */
 export const SHOT_HEIGHT = 1.35;
@@ -113,40 +138,68 @@ export const ARENA_OBSTACLES: readonly ArenaObstacle[] = [
     halfWidth: 0.6,
     halfDepth: 1.5,
     height: 1
-  },
-  // Parked cars. They are not drivable online, so every player collides with
-  // the same two boxes the client draws them as.
-  {
-    name: "parked-sedan",
-    centerX: -15.5,
-    centerZ: -3,
-    halfWidth: 1.1,
-    halfDepth: 1.6,
-    height: 1.3
-  },
-  {
-    name: "parked-hatchback",
-    centerX: 10,
-    centerZ: 3,
-    halfWidth: 1.1,
-    halfDepth: 1.6,
-    height: 1.3
   }
 ];
 
+/**
+ * Spawns sit in the side alleys, clear of every building and parking bay, so a
+ * freshly spawned player is never wedged against a wall.
+ */
 export const BLUE_SPAWNS: readonly ArenaSpawn[] = [
-  { x: -19, z: -3, yaw: Math.PI / 2 },
-  { x: -19, z: 3, yaw: Math.PI / 2 },
-  { x: -19, z: -9, yaw: Math.PI / 2 },
-  { x: -19, z: 9, yaw: Math.PI / 2 }
+  { x: -21, z: -8, yaw: Math.PI / 2 },
+  { x: -21, z: 8, yaw: Math.PI / 2 },
+  { x: -21, z: -12, yaw: Math.PI / 2 },
+  { x: -21, z: 12, yaw: Math.PI / 2 }
 ];
 
 export const RED_SPAWNS: readonly ArenaSpawn[] = [
-  { x: 19, z: -3, yaw: -Math.PI / 2 },
-  { x: 19, z: 3, yaw: -Math.PI / 2 },
-  { x: 19, z: -9, yaw: -Math.PI / 2 },
-  { x: 19, z: 9, yaw: -Math.PI / 2 }
+  { x: 21, z: -8, yaw: -Math.PI / 2 },
+  { x: 21, z: 8, yaw: -Math.PI / 2 },
+  { x: 21, z: -12, yaw: -Math.PI / 2 },
+  { x: 21, z: 12, yaw: -Math.PI / 2 }
 ];
+
+/**
+ * Marked bays along both kerbs of the main road, four per side of the plaza.
+ * Neighbouring bays are 4 m apart and the middle of the road stays open, so no
+ * parked car can block another or the lane between them.
+ */
+export const PARKING_SLOTS: readonly ArenaSpawn[] = [
+  { x: -12.5, z: 3.3, yaw: Math.PI / 2 },
+  { x: 12.5, z: 3.3, yaw: Math.PI / 2 },
+  { x: -16.5, z: 3.3, yaw: Math.PI / 2 },
+  { x: 16.5, z: 3.3, yaw: Math.PI / 2 },
+  { x: -12.5, z: -3.3, yaw: Math.PI / 2 },
+  { x: 12.5, z: -3.3, yaw: Math.PI / 2 },
+  { x: -16.5, z: -3.3, yaw: Math.PI / 2 },
+  { x: 16.5, z: -3.3, yaw: Math.PI / 2 }
+];
+
+export function getParkingSlot(index: number): ArenaSpawn {
+  const slot =
+    PARKING_SLOTS[
+      ((index % PARKING_SLOTS.length) + PARKING_SLOTS.length) %
+        PARKING_SLOTS.length
+    ];
+  if (slot === undefined) {
+    throw new RangeError("Parking slot table must not be empty.");
+  }
+  return slot;
+}
+
+/** The two circles a car at this pose occupies; yaw 0 faces +Z. */
+export function carCircles(
+  x: number,
+  z: number,
+  yaw: number
+): readonly [CircleObstacle, CircleObstacle] {
+  const offsetX = Math.sin(yaw) * CAR_CIRCLE_OFFSET;
+  const offsetZ = Math.cos(yaw) * CAR_CIRCLE_OFFSET;
+  return [
+    { x: x + offsetX, z: z + offsetZ, radius: CAR_CIRCLE_RADIUS },
+    { x: x - offsetX, z: z - offsetZ, radius: CAR_CIRCLE_RADIUS }
+  ];
+}
 
 export function getSpawn(team: "blue" | "red", index: number): ArenaSpawn {
   const spawns = team === "blue" ? BLUE_SPAWNS : RED_SPAWNS;
@@ -159,50 +212,194 @@ export function getSpawn(team: "blue" | "red", index: number): ArenaSpawn {
 }
 
 /**
- * Slides a circle of {@link PLAYER_RADIUS} to a target position, pushing it out
- * of any obstacle it would overlap and clamping it to the arena bounds.
+ * Slides a circle (a player by default) to a target position. Walls and
+ * parked cars push it out along the contact normal, so it glides around
+ * corners instead of catching on them, and the arena bounds clamp it.
  */
 export function resolveMovement(
   fromX: number,
   fromZ: number,
   toX: number,
-  toZ: number
+  toZ: number,
+  circles: readonly CircleObstacle[] = [],
+  radius: number = PLAYER_RADIUS
 ): { readonly x: number; readonly z: number } {
-  let x = clamp(toX, -ARENA_HALF_WIDTH, ARENA_HALF_WIDTH);
-  let z = clamp(toZ, -ARENA_HALF_DEPTH, ARENA_HALF_DEPTH);
+  const resolved = pushOutOfWorld(toX, toZ, radius, circles);
+  if (!Number.isFinite(resolved.x) || !Number.isFinite(resolved.z)) {
+    return { x: fromX, z: fromZ };
+  }
+  return resolved;
+}
 
-  for (const obstacle of ARENA_OBSTACLES) {
-    const minX = obstacle.centerX - obstacle.halfWidth - PLAYER_RADIUS;
-    const maxX = obstacle.centerX + obstacle.halfWidth + PLAYER_RADIUS;
-    const minZ = obstacle.centerZ - obstacle.halfDepth - PLAYER_RADIUS;
-    const maxZ = obstacle.centerZ + obstacle.halfDepth + PLAYER_RADIUS;
-
-    if (x <= minX || x >= maxX || z <= minZ || z >= maxZ) {
-      continue;
+/**
+ * Moves a car (see {@link carCircles}) to a target position. Each end is
+ * pushed out of the world on its own and the correction is applied to the
+ * whole car, which lets it scrape along walls and swing round corners.
+ */
+export function resolveVehicleMovement(
+  fromX: number,
+  fromZ: number,
+  toX: number,
+  toZ: number,
+  yaw: number,
+  circles: readonly CircleObstacle[] = []
+): { readonly x: number; readonly z: number } {
+  let x = toX;
+  let z = toZ;
+  for (let pass = 0; pass < 4; pass += 1) {
+    let moved = false;
+    for (const sign of [1, -1]) {
+      const endX = x + Math.sin(yaw) * CAR_CIRCLE_OFFSET * sign;
+      const endZ = z + Math.cos(yaw) * CAR_CIRCLE_OFFSET * sign;
+      const pushed = pushOutOfWorld(endX, endZ, CAR_CIRCLE_RADIUS, circles);
+      const deltaX = pushed.x - endX;
+      const deltaZ = pushed.z - endZ;
+      if (Math.abs(deltaX) > 1e-6 || Math.abs(deltaZ) > 1e-6) {
+        x += deltaX;
+        z += deltaZ;
+        moved = true;
+      }
     }
-
-    // Push out along whichever axis needs the least correction, which makes a
-    // player slide along a wall instead of sticking to it.
-    const pushLeft = x - minX;
-    const pushRight = maxX - x;
-    const pushDown = z - minZ;
-    const pushUp = maxZ - z;
-    const smallest = Math.min(pushLeft, pushRight, pushDown, pushUp);
-
-    if (smallest === pushLeft) {
-      x = minX;
-    } else if (smallest === pushRight) {
-      x = maxX;
-    } else if (smallest === pushDown) {
-      z = minZ;
-    } else {
-      z = maxZ;
+    if (!moved) {
+      break;
     }
   }
-
   if (!Number.isFinite(x) || !Number.isFinite(z)) {
     return { x: fromX, z: fromZ };
   }
+  return { x, z };
+}
+
+/**
+ * Where a player lands when leaving a car: the first free spot beside it,
+ * then behind and in front. Never inside a wall or another car.
+ */
+export function getVehicleExit(
+  carX: number,
+  carZ: number,
+  carYaw: number,
+  otherCircles: readonly CircleObstacle[] = []
+): { readonly x: number; readonly z: number } {
+  const circles = [...otherCircles, ...carCircles(carX, carZ, carYaw)];
+  const rightX = Math.cos(carYaw);
+  const rightZ = -Math.sin(carYaw);
+  const forwardX = Math.sin(carYaw);
+  const forwardZ = Math.cos(carYaw);
+  const candidates = [
+    [rightX * 2.1, rightZ * 2.1],
+    [-rightX * 2.1, -rightZ * 2.1],
+    [-forwardX * 2.9, -forwardZ * 2.9],
+    [forwardX * 2.9, forwardZ * 2.9]
+  ] as const;
+
+  let fallback: { readonly x: number; readonly z: number } | undefined;
+  for (const [offsetX, offsetZ] of candidates) {
+    const wantedX = carX + offsetX;
+    const wantedZ = carZ + offsetZ;
+    const resolved = resolveMovement(
+      wantedX,
+      wantedZ,
+      wantedX,
+      wantedZ,
+      circles
+    );
+    fallback ??= resolved;
+    if (Math.hypot(resolved.x - wantedX, resolved.z - wantedZ) < 0.05) {
+      return resolved;
+    }
+  }
+  return fallback ?? { x: carX, z: carZ };
+}
+
+function pushOutOfWorld(
+  startX: number,
+  startZ: number,
+  radius: number,
+  circles: readonly CircleObstacle[]
+): { x: number; z: number } {
+  let x = startX;
+  let z = startZ;
+
+  // Pushing out of one obstacle can shove the circle into the next, so repeat
+  // until nothing moves it any more.
+  for (let pass = 0; pass < 6; pass += 1) {
+    let moved = false;
+
+    for (const obstacle of ARENA_OBSTACLES) {
+      const minX = obstacle.centerX - obstacle.halfWidth;
+      const maxX = obstacle.centerX + obstacle.halfWidth;
+      const minZ = obstacle.centerZ - obstacle.halfDepth;
+      const maxZ = obstacle.centerZ + obstacle.halfDepth;
+      const nearestX = clamp(x, minX, maxX);
+      const nearestZ = clamp(z, minZ, maxZ);
+      const offsetX = x - nearestX;
+      const offsetZ = z - nearestZ;
+      const distanceSquared = offsetX * offsetX + offsetZ * offsetZ;
+      if (distanceSquared >= radius * radius) {
+        continue;
+      }
+
+      if (distanceSquared > 1e-12) {
+        // Outside the box: push along the contact normal, which is what makes
+        // a corner round instead of sticky.
+        const distance = Math.sqrt(distanceSquared);
+        const push = radius - distance;
+        x += (offsetX / distance) * push;
+        z += (offsetZ / distance) * push;
+      } else {
+        // The centre is inside the box: leave through the nearest face.
+        const pushLeft = x - minX;
+        const pushRight = maxX - x;
+        const pushDown = z - minZ;
+        const pushUp = maxZ - z;
+        const smallest = Math.min(pushLeft, pushRight, pushDown, pushUp);
+        if (smallest === pushLeft) {
+          x = minX - radius;
+        } else if (smallest === pushRight) {
+          x = maxX + radius;
+        } else if (smallest === pushDown) {
+          z = minZ - radius;
+        } else {
+          z = maxZ + radius;
+        }
+      }
+      moved = true;
+    }
+
+    for (const circle of circles) {
+      const offsetX = x - circle.x;
+      const offsetZ = z - circle.z;
+      const minimum = radius + circle.radius;
+      const distanceSquared = offsetX * offsetX + offsetZ * offsetZ;
+      if (distanceSquared >= minimum * minimum) {
+        continue;
+      }
+      const distance = Math.sqrt(distanceSquared);
+      if (distance > 1e-6) {
+        const push = minimum - distance;
+        x += (offsetX / distance) * push;
+        z += (offsetZ / distance) * push;
+      } else {
+        x = circle.x + minimum;
+      }
+      moved = true;
+    }
+
+    const limitX = ARENA_WALL_X - radius;
+    const limitZ = ARENA_WALL_Z - radius;
+    const clampedX = clamp(x, -limitX, limitX);
+    const clampedZ = clamp(z, -limitZ, limitZ);
+    if (clampedX !== x || clampedZ !== z) {
+      x = clampedX;
+      z = clampedZ;
+      moved = true;
+    }
+
+    if (!moved) {
+      break;
+    }
+  }
+
   return { x, z };
 }
 

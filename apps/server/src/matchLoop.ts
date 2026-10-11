@@ -1,10 +1,17 @@
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 import {
+  VEHICLE_ENTER_DISTANCE,
+  VEHICLE_SPEED_MULTIPLIER,
+  carCircles,
+  getParkingSlot,
   getSpawn,
+  getVehicleExit,
   raycastCircle,
   raycastObstacles,
   resolveMovement,
-  PLAYER_RADIUS
+  resolveVehicleMovement,
+  PLAYER_RADIUS,
+  type CircleObstacle
 } from "@scooter-shooter/simulation";
 import type { PlayerSnapshot, ServerMessage } from "@scooter-shooter/protocol";
 
@@ -34,6 +41,12 @@ const MAX_CREDITED_STEP_MS = 100;
 const MAX_MOVE_BUDGET_MS = 250;
 /** Shots closer together than this share of the fire interval are refused. */
 const FIRE_INTERVAL_TOLERANCE = 0.6;
+/**
+ * Extra reach, in metres, when checking a request to get into a car. The
+ * client decides on its own position, which can be a few frames ahead of the
+ * server's, and a refused request would look like a broken door.
+ */
+const ENTER_LATENCY_ALLOWANCE = 2;
 /** Every this many ticks the full match state is re-broadcast to the room. */
 const MATCH_STATE_REFRESH_TICKS = TICK_RATE_HZ;
 
@@ -63,6 +76,13 @@ export function respawnPlayer(
   player.velocityZ = 0;
   player.yaw = spawn.yaw;
   player.pitch = 0;
+  // A respawn parks the car back in its bay, so it can never be left wedged
+  // somewhere another player needs.
+  const bay = getParkingSlot(player.carSlot);
+  player.carX = bay.x;
+  player.carZ = bay.z;
+  player.carYaw = bay.yaw;
+  player.driving = false;
   player.health = MAX_HEALTH;
   player.ammo = MAGAZINE_SIZE;
   player.isAlive = true;
@@ -108,8 +128,26 @@ export function toPlayerSnapshot(player: RoomPlayer): PlayerSnapshot {
     health: player.health,
     ammo: player.ammo,
     isAlive: player.isAlive,
-    lastProcessedInput: player.lastProcessedInput
+    lastProcessedInput: player.lastProcessedInput,
+    vehicle: {
+      x: round(player.driving ? player.positionX : player.carX),
+      z: round(player.driving ? player.positionZ : player.carZ),
+      yaw: round(player.carYaw),
+      driving: player.driving
+    }
   };
+}
+
+/** Circles of every car standing still, optionally leaving one player's out. */
+function parkedCarCircles(room: Room, except?: RoomPlayer): CircleObstacle[] {
+  const circles: CircleObstacle[] = [];
+  for (const other of room.players.values()) {
+    if (other === except || other.driving) {
+      continue;
+    }
+    circles.push(...carCircles(other.carX, other.carZ, other.carYaw));
+  }
+  return circles;
 }
 
 /**
@@ -134,7 +172,7 @@ export function stepRoom(room: Room, nowMs: number): readonly ServerMessage[] {
       continue;
     }
 
-    applyInputs(player, nowMs);
+    applyInputs(room, player, nowMs);
   }
 
   if (
@@ -154,7 +192,7 @@ export function stepRoom(room: Room, nowMs: number): readonly ServerMessage[] {
   return messages;
 }
 
-function applyInputs(player: RoomPlayer, nowMs: number): void {
+function applyInputs(room: Room, player: RoomPlayer, nowMs: number): void {
   // Movement time is earned from the server's own clock, so a client can
   // neither run faster than real time nor lose time to a late packet.
   player.moveBudgetMs = Math.min(
@@ -195,20 +233,39 @@ function applyInputs(player: RoomPlayer, nowMs: number): void {
     // can ever be worth.
     const magnitude = Math.hypot(frame.movement.x, frame.movement.y);
     const scale = magnitude > 1 ? 1 / magnitude : 1;
-    const distance = (MOVE_SPEED * stepMs) / 1000;
+    updateDriving(room, player, frame.driving === true, frame.vehicleYaw);
+
+    const speed = player.driving
+      ? MOVE_SPEED * VEHICLE_SPEED_MULTIPLIER
+      : MOVE_SPEED;
+    const distance = (speed * stepMs) / 1000;
     const deltaX = frame.movement.x * scale * distance;
     const deltaZ = frame.movement.y * scale * distance;
 
-    const resolved = resolveMovement(
-      player.positionX,
-      player.positionZ,
-      player.positionX + deltaX,
-      player.positionZ + deltaZ
-    );
+    const resolved = player.driving
+      ? resolveVehicleMovement(
+          player.positionX,
+          player.positionZ,
+          player.positionX + deltaX,
+          player.positionZ + deltaZ,
+          player.carYaw,
+          parkedCarCircles(room, player)
+        )
+      : resolveMovement(
+          player.positionX,
+          player.positionZ,
+          player.positionX + deltaX,
+          player.positionZ + deltaZ,
+          parkedCarCircles(room)
+        );
     totalX += resolved.x - player.positionX;
     totalZ += resolved.z - player.positionZ;
     player.positionX = resolved.x;
     player.positionZ = resolved.z;
+    if (player.driving) {
+      player.carX = resolved.x;
+      player.carZ = resolved.z;
+    }
 
     player.yaw = frame.aimYaw;
     player.pitch = clamp(frame.aimPitch, -Math.PI / 2, Math.PI / 2);
@@ -218,6 +275,48 @@ function applyInputs(player: RoomPlayer, nowMs: number): void {
   const elapsedSeconds = TICK_INTERVAL_MS / 1000;
   player.velocityX = round(totalX / elapsedSeconds);
   player.velocityZ = round(totalZ / elapsedSeconds);
+}
+
+/**
+ * Applies a client's claim that it is (not) behind the wheel. Getting in needs
+ * the player to be next to their own car; getting out parks the car where it
+ * stands and puts the player on the nearest free spot beside it.
+ */
+function updateDriving(
+  room: Room,
+  player: RoomPlayer,
+  wantsToDrive: boolean,
+  vehicleYaw: number | undefined
+): void {
+  if (wantsToDrive && !player.driving) {
+    const distance = Math.hypot(
+      player.positionX - player.carX,
+      player.positionZ - player.carZ
+    );
+    if (distance <= VEHICLE_ENTER_DISTANCE + ENTER_LATENCY_ALLOWANCE) {
+      player.driving = true;
+      player.positionX = player.carX;
+      player.positionZ = player.carZ;
+    }
+  } else if (!wantsToDrive && player.driving) {
+    player.driving = false;
+    const exit = getVehicleExit(
+      player.carX,
+      player.carZ,
+      player.carYaw,
+      parkedCarCircles(room, player)
+    );
+    player.positionX = exit.x;
+    player.positionZ = exit.z;
+  }
+
+  if (
+    player.driving &&
+    vehicleYaw !== undefined &&
+    Number.isFinite(vehicleYaw)
+  ) {
+    player.carYaw = vehicleYaw;
+  }
 }
 
 /**

@@ -2,7 +2,13 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
 import {
+  DEFAULT_CAR,
   MAX_SAVED_SKINS,
+  NPC_CARS,
+  normalizeCar,
+  parseCarOrDefault,
+  parseStoredCar,
+  serializeCar,
   createDefaultLibrary,
   getActiveSkin,
   parseSkinLibrary,
@@ -178,5 +184,53 @@ void describe("skin library", () => {
     }
     assert.equal(library.skins.length, MAX_SAVED_SKINS);
     assert.equal(selectSkin(library, "missing").activeId, library.activeId);
+  });
+});
+
+void describe("car designs", () => {
+  void it("round-trips a design through storage unchanged", () => {
+    const car = {
+      ...DEFAULT_CAR,
+      bodyStyle: "sports" as const,
+      paintColor: "#12AB34",
+      spoiler: "wing" as const
+    };
+    assert.deepEqual(parseStoredCar(serializeCar(car)), normalizeCar(car));
+  });
+
+  void it("falls back to the default for missing or damaged storage", () => {
+    assert.deepEqual(parseStoredCar(null), DEFAULT_CAR);
+    assert.deepEqual(parseStoredCar("not json"), DEFAULT_CAR);
+    assert.deepEqual(
+      parseStoredCar(JSON.stringify({ ...DEFAULT_CAR, rims: "gold-plated" })),
+      DEFAULT_CAR
+    );
+  });
+
+  void it("accepts setCar and carChanged messages and rejects bad ones", () => {
+    assert.equal(
+      parseClientMessage({ type: "setCar", car: DEFAULT_CAR }).type,
+      "setCar"
+    );
+    assert.throws(() =>
+      parseClientMessage({
+        type: "setCar",
+        car: { ...DEFAULT_CAR, paintColor: "red" }
+      })
+    );
+    assert.equal(
+      parseServerMessage({
+        type: "carChanged",
+        playerId: "p1",
+        car: DEFAULT_CAR
+      }).type,
+      "carChanged"
+    );
+  });
+
+  void it("keeps the preset cars valid", () => {
+    for (const preset of NPC_CARS) {
+      assert.deepEqual(parseCarOrDefault(preset), normalizeCar(preset));
+    }
   });
 });

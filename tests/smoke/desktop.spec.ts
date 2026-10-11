@@ -50,39 +50,6 @@ test("supports keyboard movement, mouse aiming, and mouse fire", async ({
   await page.mouse.up();
 });
 
-test("enters, drives, and exits the nearby vehicle", async ({ page }) => {
-  await openTraining(page);
-  const gameShell = page.locator("#game-shell");
-  const actionButton = page.locator("#vehicle-action");
-  await expect(actionButton).toBeVisible();
-  await expect(actionButton).toHaveText("Drive vehicle");
-
-  await page.keyboard.press("KeyE");
-  await expect(actionButton).toHaveText("Exit vehicle");
-  const start = parseVector(
-    await gameShell.getAttribute("data-player-position")
-  );
-
-  await page.keyboard.down("KeyW");
-  // The vehicle must keep travelling, not just nudge once before the player
-  // collider blocks it.
-  await expect
-    .poll(
-      async () => {
-        const current = parseVector(
-          await gameShell.getAttribute("data-player-position")
-        );
-        return Math.hypot(current.x - start.x, current.z - start.z);
-      },
-      { timeout: 6_000 }
-    )
-    .toBeGreaterThan(6);
-  await page.keyboard.up("KeyW");
-
-  await page.keyboard.press("KeyE");
-  await expect(actionButton).toHaveText("Drive vehicle");
-});
-
 test("renders every bot shot and misses often enough to be beatable", async ({
   page
 }) => {

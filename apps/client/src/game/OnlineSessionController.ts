@@ -4,7 +4,11 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import type { ServerMessage, Team } from "@scooter-shooter/protocol";
+import type {
+  PlayerSnapshot,
+  ServerMessage,
+  Team
+} from "@scooter-shooter/protocol";
 
 import type { NetworkClient } from "../net/NetworkClient";
 import { RemotePlayerRenderer } from "./RemotePlayerRenderer";
@@ -53,6 +57,15 @@ export class OnlineSessionController {
   readonly #getMovement: () => { readonly x: number; readonly z: number };
   readonly #getAimYaw: () => number;
   readonly #setLocalVisible: (visible: boolean) => void;
+  readonly #getVehicle: () => {
+    readonly driving: boolean;
+    readonly yaw: number;
+  };
+  readonly #onVehicleRejected: () => void;
+  readonly #onRespawn: () => void;
+  /** First input sequence sent with driving set, until the server confirms. */
+  #driveRequestSequence: number | undefined;
+  #wasDriving = false;
   readonly #history: PredictedPosition[] = [];
 
   #phaseEndsAtMs = 0;
@@ -77,6 +90,15 @@ export class OnlineSessionController {
       readonly getMovement: () => { readonly x: number; readonly z: number };
       readonly getAimYaw: () => number;
       readonly setLocalVisible?: (visible: boolean) => void;
+      /** Whether the player is in their car, and which way it points. */
+      readonly getVehicle?: () => {
+        readonly driving: boolean;
+        readonly yaw: number;
+      };
+      /** The server says the player is not driving, so the car must reset. */
+      readonly onVehicleRejected?: () => void;
+      /** The server parked the car back in its bay (a respawn). */
+      readonly onRespawn?: () => void;
     }
   ) {
     this.#network = network;
@@ -87,6 +109,9 @@ export class OnlineSessionController {
     this.#getMovement = input.getMovement;
     this.#getAimYaw = input.getAimYaw;
     this.#setLocalVisible = input.setLocalVisible ?? (() => undefined);
+    this.#getVehicle = input.getVehicle ?? (() => ({ driving: false, yaw: 0 }));
+    this.#onVehicleRejected = input.onVehicleRejected ?? (() => undefined);
+    this.#onRespawn = input.onRespawn ?? (() => undefined);
 
     const match = network.match;
     if (match !== undefined) {
@@ -96,6 +121,11 @@ export class OnlineSessionController {
         this.#remotePlayers.registerMember(member);
       }
     }
+  }
+
+  /** Circles of the cars other players have parked, for collisions. */
+  getParkedCircles(): ReturnType<RemotePlayerRenderer["getParkedCircles"]> {
+    return this.#remotePlayers.getParkedCircles();
   }
 
   get remotePlayerCount(): number {
@@ -161,6 +191,10 @@ export class OnlineSessionController {
         this.#remotePlayers.registerMember(message.member);
         return;
       }
+      case "carChanged": {
+        this.#remotePlayers.setCar(message.playerId, message.car);
+        return;
+      }
       case "skinChanged": {
         this.#remotePlayers.setSkin(message.playerId, message.skin);
         return;
@@ -194,6 +228,9 @@ export class OnlineSessionController {
           this.#health = 100;
           this.#elements.health.textContent = "100";
           this.#history.length = 0;
+          this.#driveRequestSequence = undefined;
+          this.#wasDriving = false;
+          this.#onRespawn();
           this.#player.position.set(
             message.position.x,
             message.position.y + 1.2,
@@ -232,12 +269,21 @@ export class OnlineSessionController {
     const movement = this.#isAlive ? this.#getMovement() : { x: 0, z: 0 };
 
     const sequence = this.#network.takeInputSequence();
+    const vehicle = this.#getVehicle();
+    if (vehicle.driving && !this.#wasDriving) {
+      this.#driveRequestSequence = sequence;
+    } else if (!vehicle.driving) {
+      this.#driveRequestSequence = undefined;
+    }
+    this.#wasDriving = vehicle.driving;
     this.#network.sendInput({
       sequence,
       clientTimeMs: Math.round(nowMs),
       movement: { x: movement.x, y: movement.z },
       aimYaw: this.#getAimYaw(),
-      aimPitch: 0
+      aimPitch: 0,
+      driving: vehicle.driving,
+      vehicleYaw: vehicle.yaw
     });
 
     // Remember where prediction put the player when this frame was sent, so a
@@ -303,7 +349,26 @@ export class OnlineSessionController {
       this.#elements.health.textContent = String(this.#health);
     }
     if (local.isAlive) {
+      this.#checkDrive(local);
       this.#reconcile(local.position, local.lastProcessedInput);
+    }
+  }
+
+  /**
+   * The server only lets a player drive from next to their own car. When it
+   * has seen the request and still says the player is on foot, the local
+   * car is put back instead of driving where nobody else can see it.
+   */
+  #checkDrive(local: PlayerSnapshot): void {
+    const requested = this.#driveRequestSequence;
+    if (
+      requested !== undefined &&
+      local.lastProcessedInput >= requested &&
+      local.vehicle?.driving === false
+    ) {
+      this.#driveRequestSequence = undefined;
+      this.#wasDriving = false;
+      this.#onVehicleRejected();
     }
   }
 

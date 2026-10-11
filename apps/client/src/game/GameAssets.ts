@@ -25,24 +25,6 @@ export async function addCharacterModel(
   return root;
 }
 
-export async function addVehicleModel(
-  scene: Scene,
-  parent: AbstractMesh,
-  model: "hatchback-sports" | "sedan",
-  instanceName: string
-): Promise<TransformNode> {
-  const root = await importModel(
-    scene,
-    `${ASSET_ROOT}vehicles/`,
-    `${model}.glb`,
-    instanceName
-  );
-  root.parent = parent;
-  root.position.y = 0.35;
-  root.scaling.setAll(1.15);
-  return root;
-}
-
 export async function addVehiclePropModel(
   scene: Scene,
   model: "box" | "cone",

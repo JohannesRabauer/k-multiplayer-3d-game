@@ -5,6 +5,7 @@ import {
   type ClientMessage,
   type RoomMember,
   type ServerMessage,
+  type CarDesign,
   type Skin,
   type Team
 } from "@scooter-shooter/protocol";
@@ -26,6 +27,8 @@ export interface NetworkClientOptions {
   readonly clientBuild: string;
   /** The skin to present to other players; read on every (re)connection. */
   readonly getSkin?: () => Skin;
+  /** The car design to present to other players; read on every connection. */
+  readonly getCar?: () => CarDesign;
   readonly onStatusChange?: (status: ConnectionStatus, detail?: string) => void;
   readonly onMessage?: (message: ServerMessage) => void;
 }
@@ -115,6 +118,8 @@ export class NetworkClient {
     readonly movement: { readonly x: number; readonly y: number };
     readonly aimYaw: number;
     readonly aimPitch: number;
+    readonly driving?: boolean;
+    readonly vehicleYaw?: number;
   }): void {
     this.#send({ type: "inputBatch", frames: [frame] });
   }
@@ -220,6 +225,10 @@ export class NetworkClient {
     const skin = this.#options.getSkin?.();
     if (skin !== undefined) {
       this.#send({ type: "setSkin", skin });
+    }
+    const car = this.#options.getCar?.();
+    if (car !== undefined) {
+      this.#send({ type: "setCar", car });
     }
     this.#startHeartbeat();
     this.#reconnectAttempts = 0;
