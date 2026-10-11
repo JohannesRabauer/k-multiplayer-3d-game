@@ -27,9 +27,10 @@ import { createBlocktown } from "./game/createBlocktown";
 import {
   addCharacterModel,
   addCityModel,
-  addVehicleModel,
   addVehiclePropModel
 } from "./game/GameAssets";
+import { CarLot } from "./game/CarLot";
+import { loadCar } from "./game/carStorage";
 import { loadSkinLibrary } from "./game/skinStorage";
 import { LocalPlayerController } from "./game/LocalPlayerController";
 import { LocalHitscanResolver } from "./game/LocalHitscanResolver";
@@ -49,8 +50,14 @@ import {
   type ConnectionStatus
 } from "./net/NetworkClient";
 import { resolveServerUrl } from "./net/serverUrl";
+import { CarEditor } from "./ui/CarEditor";
 import { SkinEditor } from "./ui/SkinEditor";
-import { getActiveSkin, type ServerMessage } from "@scooter-shooter/protocol";
+import {
+  NPC_CARS,
+  getActiveSkin,
+  type ServerMessage
+} from "@scooter-shooter/protocol";
+import { MAX_PARKING_SLOTS } from "@scooter-shooter/simulation";
 
 function requireHtmlElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -174,6 +181,29 @@ requireButtonElement("open-skin-editor").addEventListener("click", () => {
   skinEditor.open();
 });
 
+const carEditor = new CarEditor({
+  root: requireHtmlElement("car-editor"),
+  canvas: (() => {
+    const element = requireHtmlElement("car-preview");
+    if (!(element instanceof HTMLCanvasElement)) {
+      throw new TypeError("#car-preview must be a canvas element.");
+    }
+    return element;
+  })(),
+  options: requireHtmlElement("car-options"),
+  presets: requireHtmlElement("car-presets"),
+  message: requireHtmlElement("car-message"),
+  saveButton: requireButtonElement("car-save"),
+  resetButton: requireButtonElement("car-reset"),
+  closeButton: requireButtonElement("car-close"),
+  turnLeftButton: requireButtonElement("car-turn-left"),
+  turnRightButton: requireButtonElement("car-turn-right"),
+  randomButton: requireButtonElement("car-random")
+});
+requireButtonElement("open-car-editor").addEventListener("click", () => {
+  carEditor.open();
+});
+
 let stopGame: (() => void) | undefined;
 let isGameStarting = false;
 let networkMessageSink: ((message: ServerMessage) => void) | undefined;
@@ -213,6 +243,9 @@ function showCompatibilityFailure(message: string): void {
   statusPanel.classList.add("status-panel--error");
   statusMessage.textContent = message;
 }
+
+/** Offline, the player's car stands in the bay nearest the blue spawn. */
+const OFFLINE_CAR_SLOT = 2;
 
 async function createScene(
   engine: Engine,
@@ -259,9 +292,9 @@ async function createScene(
   targetMaterial.alpha = 0;
   const botSpawnPositions = [
     new Vector3(11, 0.1, 0),
-    map.redSpawnPositions[0],
-    map.redSpawnPositions[1],
     new Vector3(15, 0.1, 0),
+    new Vector3(-11, 0.1, 0),
+    new Vector3(19.5, 0.1, 0),
     new Vector3(4, 0.1, -7),
     new Vector3(4, 0.1, 7),
     new Vector3(-4, 0.1, -7),
@@ -279,9 +312,6 @@ async function createScene(
       mesh.position.copyFrom(spawnPosition);
       mesh.position.y = 1.2;
       mesh.material = targetMaterial;
-      mesh.checkCollisions = true;
-      mesh.ellipsoid = new Vector3(0.55, 1.2, 0.55);
-      mesh.ellipsoidOffset = Vector3.Zero();
       return { id, mesh, spawnPosition: mesh.position.clone() };
     });
   await Promise.all(
@@ -294,102 +324,90 @@ async function createScene(
       mesh.visibility = 0;
     }
   }
+  // Each model is stretched to the exact footprint and height of its collision
+  // box, so what the player sees is what stops them: no floating roofs, no
+  // invisible walls and no walking through a facade.
+  const buildingVisuals = [
+    { model: "building-a", name: "north-west", x: -14, z: 11, height: 6 },
+    { model: "building-f", name: "north-east", x: 14, z: 11, height: 8 },
+    { model: "building-d", name: "south-west", x: -14, z: -11, height: 7 },
+    { model: "building-a", name: "south-east", x: 14, z: -11, height: 5 }
+  ] as const;
+  const modelExtents = {
+    "building-a": { width: 0.884, depth: 0.94, height: 1.293 },
+    "building-d": { width: 0.84, depth: 0.9, height: 1.293 },
+    "building-f": { width: 0.84, depth: 1.03, height: 1.693 }
+  } as const;
+  const crateCovers = [
+    { name: "west-north", x: -8, z: 3 },
+    { name: "west-south", x: -8, z: -3 },
+    { name: "east-north", x: 8, z: 3 },
+    { name: "east-south", x: 8, z: -3 }
+  ] as const;
   await Promise.all([
-    addCityModel(
-      scene,
-      "building-a",
-      new Vector3(-14, 3, 11),
-      new Vector3(5, 3, 4),
-      "city-building-north-west"
-    ),
-    addCityModel(
-      scene,
-      "building-f",
-      new Vector3(14, 4, 11),
-      new Vector3(5, 3.2, 4),
-      "city-building-north-east"
-    ),
-    addCityModel(
-      scene,
-      "building-d",
-      new Vector3(-14, 3.5, -11),
-      new Vector3(5, 3.2, 4),
-      "city-building-south-west"
-    ),
-    addCityModel(
-      scene,
-      "building-a",
-      new Vector3(14, 2.5, -11),
-      new Vector3(5, 2.5, 4),
-      "city-building-south-east"
-    ),
+    ...buildingVisuals.map((building) => {
+      const extent = modelExtents[building.model];
+      return addCityModel(
+        scene,
+        building.model,
+        new Vector3(building.x, 0, building.z),
+        new Vector3(
+          10 / extent.width,
+          building.height / extent.height,
+          8 / extent.depth
+        ),
+        `city-building-${building.name}`
+      );
+    }),
     addCityModel(
       scene,
       "parasol",
-      new Vector3(2.5, 1, 2.5),
-      new Vector3(1.5, 1.5, 1.5),
+      new Vector3(2.5, 0.14, 2.5),
+      new Vector3(2.5, 2.5, 2.5),
       "plaza-parasol"
     ),
-    addVehiclePropModel(
-      scene,
-      "box",
-      new Vector3(-8, 0.63, 3),
-      new Vector3(2, 0.63, 0.5),
-      "cover-crates-west-north"
-    ),
-    addVehiclePropModel(
-      scene,
-      "box",
-      new Vector3(8, 0.63, -3),
-      new Vector3(2, 0.63, 0.5),
-      "cover-crates-east-south"
+    // The crate model is 0.715 m on each side; the cover box is 4 x 1.25 x 1.
+    ...crateCovers.map((cover) =>
+      addVehiclePropModel(
+        scene,
+        "box",
+        new Vector3(cover.x, 0, cover.z),
+        new Vector3(4 / 0.715, 1.25 / 0.715, 1 / 0.715),
+        `cover-crates-${cover.name}`
+      )
     ),
     addVehiclePropModel(
       scene,
       "cone",
-      new Vector3(2, 0.55, -4),
-      new Vector3(0.45, 0.55, 0.45),
+      new Vector3(2, 0.06, -4),
+      new Vector3(0.45, 0.55, 0.45).scale(1.2),
       "traffic-cone-one"
     ),
     addVehiclePropModel(
       scene,
       "cone",
-      new Vector3(3, 0.55, -4),
-      new Vector3(0.45, 0.55, 0.45),
+      new Vector3(3, 0.06, -4),
+      new Vector3(0.45, 0.55, 0.45).scale(1.2),
       "traffic-cone-two"
     )
   ]);
-  const vehicleMaterial = new StandardMaterial("vehicle-collider", scene);
-  vehicleMaterial.alpha = 0;
-  const vehicleDefinitions = [
-    {
-      id: "vehicle-sedan",
-      model: "sedan" as const,
-      position: new Vector3(-15.5, 0.65, -3)
-    },
-    {
-      id: "vehicle-hatchback",
-      model: "hatchback-sports" as const,
-      position: new Vector3(10, 0.65, 3)
-    }
-  ];
-  const vehicles = vehicleDefinitions.map((definition) => {
-    const mesh = MeshBuilder.CreateBox(
-      definition.id,
-      { width: 2.2, height: 1.3, depth: 3.2 },
-      scene
-    );
-    mesh.position.copyFrom(definition.position);
-    mesh.material = vehicleMaterial;
-    mesh.checkCollisions = true;
-    mesh.ellipsoid = new Vector3(1.1, 0.65, 1.6);
-    return { id: definition.id, mesh, model: definition.model };
-  });
-  await Promise.all(
-    vehicles.map((vehicle) =>
-      addVehicleModel(scene, vehicle.mesh, vehicle.model, `${vehicle.id}-model`)
-    )
+
+  // The player's car stands in its own bay (online: the one the server gave
+  // this player). The remaining bays are filled with scenery cars offline.
+  const carLot = new CarLot(scene);
+  const localMember = network?.match?.members.find(
+    (member) => member.playerId === network.match?.playerId
   );
+  const ownCarSlot = localMember?.carSlot ?? OFFLINE_CAR_SLOT;
+  const ownCar = carLot.placeOwn(loadCar(), ownCarSlot);
+  if (!isOnline) {
+    for (let slot = 0; slot < MAX_PARKING_SLOTS; slot += 1) {
+      const design = NPC_CARS[slot % NPC_CARS.length];
+      if (slot !== ownCarSlot && design !== undefined && slot < 5) {
+        carLot.placeDecor(design, slot);
+      }
+    }
+  }
   const lastMoveInput = { x: 0, z: 0 };
   const combatController = new OfflineCombatController(
     player,
@@ -421,14 +439,11 @@ async function createScene(
     scene,
     player,
     camera,
-    map.playAreaMinimum,
-    map.playAreaMaximum
+    () => carLot.getCircles()
   );
-  // Vehicles are local-only objects, so online they stay parked as scenery:
-  // still solid (the server treats them as obstacles) but not drivable.
   const vehicleController = new VehicleController(
     scene,
-    isOnline ? [] : vehicles,
+    ownCar,
     playerController,
     playerVisual,
     vehicleActionButton
@@ -503,9 +518,9 @@ async function createScene(
     bots,
     player,
     map.playAreaMinimum,
-    map.playAreaMaximum,
     map.collisionMeshes,
     {
+      getCircles: () => carLot.getCircles(),
       canEngage: (nowMs) => combatController.isRoundLive(nowMs),
       onAttack: (botId, nowMs, damage) => {
         combatController.registerBotHit(botId, nowMs, damage);
@@ -536,10 +551,25 @@ async function createScene(
               return Math.atan2(aim.x, aim.z);
             },
             setLocalVisible: (visible) => {
-              playerVisual.setEnabled(visible);
+              playerVisual.setEnabled(
+                visible && !vehicleController.isDriving()
+              );
+            },
+            getVehicle: () => ({
+              driving: vehicleController.isDriving(),
+              yaw: vehicleController.getYaw()
+            }),
+            onVehicleRejected: () => {
+              vehicleController.resetToBay();
+            },
+            onRespawn: () => {
+              vehicleController.resetToBay();
             }
           }
         );
+  if (onlineSession !== undefined) {
+    carLot.setRemoteCircles(() => onlineSession.getParkedCircles());
+  }
   if (onlineSession !== undefined && network !== undefined) {
     attachNetworkSink((message) => {
       onlineSession.handleMessage(message);
@@ -566,6 +596,10 @@ async function createScene(
       combatController.update(nowMs);
     }
     gameShell.dataset.playerPosition = `${player.position.x.toFixed(2)},${player.position.z.toFixed(2)}`;
+    gameShell.dataset.driving = String(vehicleController.isDriving());
+    gameShell.dataset.carPosition = `${ownCar.pose.x.toFixed(2)},${ownCar.pose.z.toFixed(2)}`;
+    gameShell.dataset.carDesign = JSON.stringify(ownCar.design);
+    gameShell.dataset.carSlot = String(ownCar.slot);
     gameShell.dataset.botPositions = bots
       .map(
         (bot) =>
@@ -784,6 +818,7 @@ function registerOnlineHandlers(
       serverUrl,
       clientBuild: "web",
       getSkin: () => getActiveSkin(loadSkinLibrary()),
+      getCar: () => loadCar(),
       getAuthToken: () =>
         authController === null
           ? Promise.resolve(createDevToken())

@@ -1,7 +1,9 @@
 import { z } from "zod";
 
+import { carSchema } from "./car.js";
 import { skinSchema } from "./skin.js";
 
+export * from "./car.js";
 export * from "./skin.js";
 export * from "./skinLibrary.js";
 
@@ -41,7 +43,11 @@ export const inputFrameSchema = z
     clientTimeMs: timestampSchema,
     movement: vector2Schema,
     aimYaw: z.number(),
-    aimPitch: z.number()
+    aimPitch: z.number(),
+    /** Whether the player is behind the wheel of their own car. */
+    driving: z.boolean().optional(),
+    /** Heading of the car, which is independent of where the player aims. */
+    vehicleYaw: z.number().optional()
   })
   .strict();
 
@@ -116,6 +122,13 @@ const setSkinSchema = z
   })
   .strict();
 
+const setCarSchema = z
+  .object({
+    type: z.literal("setCar"),
+    car: carSchema
+  })
+  .strict();
+
 const heartbeatSchema = z
   .object({
     type: z.literal("heartbeat"),
@@ -135,6 +148,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   createRoomSchema,
   joinWithCodeSchema,
   setSkinSchema,
+  setCarSchema,
   inputBatchSchema,
   fireIntentSchema,
   heartbeatSchema,
@@ -156,7 +170,10 @@ export const roomMemberSchema = z
     displayName: z.string().min(1).max(64),
     team: teamSchema,
     /** Optional so a client stays compatible with a server that predates skins. */
-    skin: skinSchema.optional()
+    skin: skinSchema.optional(),
+    car: carSchema.optional(),
+    /** The bay this player's car parks in; stable while they are in the room. */
+    carSlot: z.number().int().nonnegative().optional()
   })
   .strict();
 
@@ -195,6 +212,14 @@ const skinChangedSchema = z
   })
   .strict();
 
+const carChangedSchema = z
+  .object({
+    type: z.literal("carChanged"),
+    playerId: identifierSchema,
+    car: carSchema
+  })
+  .strict();
+
 const joinRejectedSchema = z
   .object({
     type: z.literal("joinRejected"),
@@ -220,7 +245,17 @@ export const playerSnapshotSchema = z
     health: z.number().int().nonnegative(),
     ammo: z.number().int().nonnegative(),
     isAlive: z.boolean(),
-    lastProcessedInput: sequenceSchema
+    lastProcessedInput: sequenceSchema,
+    /** Where the player's car is, and whether they are driving it. */
+    vehicle: z
+      .object({
+        x: z.number(),
+        z: z.number(),
+        yaw: z.number(),
+        driving: z.boolean()
+      })
+      .strict()
+      .optional()
   })
   .strict();
 
@@ -312,6 +347,7 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   playerJoinedSchema,
   playerLeftSchema,
   skinChangedSchema,
+  carChangedSchema,
   snapshotSchema,
   shotResultSchema,
   damageSchema,

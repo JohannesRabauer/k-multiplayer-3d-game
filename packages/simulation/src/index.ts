@@ -24,16 +24,29 @@ export {
   ARENA_HALF_DEPTH,
   ARENA_HALF_WIDTH,
   ARENA_OBSTACLES,
+  ARENA_WALL_X,
+  ARENA_WALL_Z,
   BLUE_SPAWNS,
+  CAR_CIRCLE_OFFSET,
+  CAR_CIRCLE_RADIUS,
+  MAX_PARKING_SLOTS,
+  PARKING_SLOTS,
   PLAYER_RADIUS,
   RED_SPAWNS,
   SHOT_HEIGHT,
+  VEHICLE_ENTER_DISTANCE,
+  VEHICLE_SPEED_MULTIPLIER,
+  carCircles,
+  getParkingSlot,
   getSpawn,
+  getVehicleExit,
   raycastCircle,
   raycastObstacles,
   resolveMovement,
+  resolveVehicleMovement,
   type ArenaObstacle,
-  type ArenaSpawn
+  type ArenaSpawn,
+  type CircleObstacle
 } from "./arena.js";
 
 export type Team = "blue" | "red";

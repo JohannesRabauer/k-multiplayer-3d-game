@@ -7,13 +7,19 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import {
+  DEFAULT_CAR,
   DEFAULT_SKIN,
+  type CarDesign,
   type PlayerSnapshot,
   type RoomMember,
   type Skin,
   type Team
 } from "@scooter-shooter/protocol";
 
+import { carCircles, type CircleObstacle } from "@scooter-shooter/simulation";
+
+import { buildCar } from "./CarBuilder";
+import { CAR_GROUND_OFFSET } from "./CarLot";
 import { buildCharacter } from "./CharacterBuilder";
 
 interface SnapshotSample {
@@ -21,6 +27,17 @@ interface SnapshotSample {
   readonly serverTimeMs: number;
   readonly position: Vector3;
   readonly yaw: number;
+  readonly vehicleYaw: number;
+}
+
+/** A player's car as shown to everyone else. */
+interface RemoteCar {
+  node: TransformNode;
+  design: CarDesign;
+  x: number;
+  z: number;
+  yaw: number;
+  driving: boolean;
 }
 
 interface RemotePlayer {
@@ -53,6 +70,8 @@ export class RemotePlayerRenderer {
   readonly #scene: Scene;
   readonly #players = new Map<string, RemotePlayer>();
   readonly #skins = new Map<string, Skin>();
+  readonly #carDesigns = new Map<string, CarDesign>();
+  readonly #cars = new Map<string, RemoteCar>();
   readonly #names = new Map<string, string>();
   readonly #blueMaterial: StandardMaterial;
   readonly #redMaterial: StandardMaterial;
@@ -97,6 +116,42 @@ export class RemotePlayerRenderer {
     if (member.skin !== undefined) {
       this.setSkin(member.playerId, member.skin);
     }
+    if (member.car !== undefined) {
+      this.setCar(member.playerId, member.car);
+    }
+  }
+
+  /** Applies a car design immediately if the car exists, otherwise on spawn. */
+  setCar(playerId: string, design: CarDesign): void {
+    this.#carDesigns.set(playerId, design);
+    const car = this.#cars.get(playerId);
+    if (car === undefined) {
+      return;
+    }
+    car.design = design;
+    car.node.dispose(false, false);
+    car.node = this.#buildRemoteCar(playerId, design);
+    this.#placeCar(car);
+  }
+
+  /** Circles of every remote car that is standing still, for collisions. */
+  getParkedCircles(): CircleObstacle[] {
+    const circles: CircleObstacle[] = [];
+    for (const car of this.#cars.values()) {
+      if (!car.driving) {
+        circles.push(...carCircles(car.x, car.z, car.yaw));
+      }
+    }
+    return circles;
+  }
+
+  #buildRemoteCar(playerId: string, design: CarDesign): TransformNode {
+    return buildCar(this.#scene, design, `remote-${playerId}-car`);
+  }
+
+  #placeCar(car: RemoteCar): void {
+    car.node.position.set(car.x, CAR_GROUND_OFFSET, car.z);
+    car.node.rotation.y = car.yaw;
   }
 
   /** Applies a skin immediately if the avatar exists, otherwise on spawn. */
@@ -158,13 +213,15 @@ export class RemotePlayerRenderer {
         remote.samples.length = 0;
       }
 
+      this.#applyVehicle(remote, snapshot);
       remote.isAlive = snapshot.isAlive;
       remote.mesh.setEnabled(snapshot.isAlive);
       this.#setHealth(remote, snapshot.health);
       remote.samples.push({
         serverTimeMs,
         position,
-        yaw: snapshot.yaw
+        yaw: snapshot.yaw,
+        vehicleYaw: snapshot.vehicle?.yaw ?? snapshot.yaw
       });
       if (remote.samples.length > MAX_SAMPLES) {
         remote.samples.shift();
@@ -175,6 +232,8 @@ export class RemotePlayerRenderer {
       if (!seen.has(playerId)) {
         this.#disposeRemote(remote);
         this.#players.delete(playerId);
+        this.#cars.get(playerId)?.node.dispose(false, false);
+        this.#cars.delete(playerId);
       }
     }
   }
@@ -187,6 +246,45 @@ export class RemotePlayerRenderer {
     }
     this.#skins.delete(playerId);
     this.#names.delete(playerId);
+    const car = this.#cars.get(playerId);
+    if (car !== undefined) {
+      car.node.dispose(false, false);
+      this.#cars.delete(playerId);
+    }
+    this.#carDesigns.delete(playerId);
+  }
+
+  /** Creates or moves a player's car to where the server says it is. */
+  #applyVehicle(remote: RemotePlayer, snapshot: PlayerSnapshot): void {
+    const vehicle = snapshot.vehicle;
+    if (vehicle === undefined) {
+      return;
+    }
+    let car = this.#cars.get(remote.playerId);
+    if (car === undefined) {
+      const design = this.#carDesigns.get(remote.playerId) ?? {
+        ...DEFAULT_CAR
+      };
+      car = {
+        node: this.#buildRemoteCar(remote.playerId, design),
+        design,
+        x: vehicle.x,
+        z: vehicle.z,
+        yaw: vehicle.yaw,
+        driving: vehicle.driving
+      };
+      this.#cars.set(remote.playerId, car);
+      this.#placeCar(car);
+    }
+    car.x = vehicle.x;
+    car.z = vehicle.z;
+    car.yaw = vehicle.yaw;
+    car.driving = vehicle.driving;
+    // The driver sits inside the car, so the walking avatar is hidden.
+    remote.character?.setEnabled(!vehicle.driving);
+    if (!vehicle.driving) {
+      this.#placeCar(car);
+    }
   }
 
   /** Advances every avatar to its interpolated pose for this frame. */
@@ -206,6 +304,7 @@ export class RemotePlayerRenderer {
       if (samples.length === 1 || renderTimeMs >= newest.serverTimeMs) {
         remote.mesh.position.copyFrom(newest.position);
         remote.mesh.rotation.y = newest.yaw;
+        this.#followDriver(remote, newest.vehicleYaw);
         continue;
       }
 
@@ -235,6 +334,10 @@ export class RemotePlayerRenderer {
         remote.mesh.position
       );
       remote.mesh.rotation.y = lerpAngle(older.yaw, newer.yaw, ratio);
+      this.#followDriver(
+        remote,
+        lerpAngle(older.vehicleYaw, newer.vehicleYaw, ratio)
+      );
 
       // Drop samples that are now fully in the past.
       while (samples.length > 2) {
@@ -245,6 +348,20 @@ export class RemotePlayerRenderer {
         samples.shift();
       }
     }
+  }
+
+  /** While a player drives, their car rides along with the smoothed avatar. */
+  #followDriver(remote: RemotePlayer, vehicleYaw: number): void {
+    const car = this.#cars.get(remote.playerId);
+    if (!car?.driving) {
+      return;
+    }
+    car.node.position.set(
+      remote.mesh.position.x,
+      CAR_GROUND_OFFSET,
+      remote.mesh.position.z
+    );
+    car.node.rotation.y = vehicleYaw;
   }
 
   /** Returns an avatar's current rendered position, if it is on screen. */
@@ -259,13 +376,17 @@ export class RemotePlayerRenderer {
     readonly health: number;
     readonly isAlive: boolean;
     readonly skin: Skin;
+    readonly car: CarDesign;
+    readonly driving: boolean;
   }[] {
     return [...this.#players.values()].map((remote) => ({
       playerId: remote.playerId,
       team: remote.team,
       health: remote.health,
       isAlive: remote.isAlive,
-      skin: remote.skin
+      skin: remote.skin,
+      car: this.#cars.get(remote.playerId)?.design ?? { ...DEFAULT_CAR },
+      driving: this.#cars.get(remote.playerId)?.driving ?? false
     }));
   }
 
@@ -279,6 +400,10 @@ export class RemotePlayerRenderer {
       this.#disposeRemote(remote);
     }
     this.#players.clear();
+    for (const car of this.#cars.values()) {
+      car.node.dispose(false, false);
+    }
+    this.#cars.clear();
   }
 
   /** Frees one avatar without touching the materials the team shares. */

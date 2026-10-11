@@ -54,7 +54,7 @@ export default defineConfig({
     },
     {
       name: "multiplayer-chromium",
-      testMatch: ["multiplayer.spec.ts", "skins.spec.ts"],
+      testMatch: ["multiplayer.spec.ts", "skins.spec.ts", "cars.spec.ts"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 800 }

@@ -38,6 +38,9 @@
           <button id="open-skin-editor" class="button button--secondary">
             Customize character
           </button>
+          <button id="open-car-editor" class="button button--secondary">
+            Design your car
+          </button>
           <div id="signed-out-actions" class="entry-actions">
             <button id="guest-sign-in" class="button button--primary">
               Continue as guest
@@ -184,6 +187,68 @@
                 ></output>
                 <h3>Saved skins</h3>
                 <div id="skin-library" class="skin-editor__library"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section
+        id="car-editor"
+        class="skin-editor"
+        aria-label="Vehicle editor"
+        hidden
+      >
+        <div class="skin-editor__panel">
+          <header class="skin-editor__header">
+            <h2>Your car</h2>
+            <button id="car-close" class="button button--quiet button--small">
+              Back
+            </button>
+          </header>
+          <div class="skin-editor__body">
+            <div class="skin-editor__preview">
+              <canvas id="car-preview" aria-label="Car preview"></canvas>
+              <div class="skin-editor__turn">
+                <button
+                  id="car-turn-left"
+                  class="button button--quiet button--small"
+                  aria-label="Turn left"
+                >
+                  ⟲
+                </button>
+                <button
+                  id="car-turn-right"
+                  class="button button--quiet button--small"
+                  aria-label="Turn right"
+                >
+                  ⟳
+                </button>
+                <button
+                  id="car-random"
+                  class="button button--quiet button--small"
+                >
+                  Surprise me
+                </button>
+              </div>
+            </div>
+            <div class="skin-editor__controls">
+              <div id="car-options"></div>
+              <div class="skin-editor__save">
+                <div class="skin-editor__buttons">
+                  <button id="car-save" class="button button--primary">
+                    Save car
+                  </button>
+                  <button id="car-reset" class="button button--quiet">
+                    Reset
+                  </button>
+                </div>
+                <output
+                  id="car-message"
+                  class="online-message"
+                  aria-live="polite"
+                ></output>
+                <h3>Presets</h3>
+                <div id="car-presets" class="skin-editor__library"></div>
               </div>
             </div>
           </div>

@@ -9,7 +9,9 @@ import type { Scene } from "@babylonjs/core/scene";
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
 import {
   computeBotHitChance,
-  getBotShotDamage
+  getBotShotDamage,
+  resolveMovement,
+  type CircleObstacle
 } from "@scooter-shooter/simulation";
 
 import { ShotEffects } from "./ShotEffects";
@@ -22,6 +24,8 @@ export interface TrainingBot {
 export interface TrainingBotControllerOptions {
   readonly canEngage: (nowMs: number) => boolean;
   readonly onAttack: (botId: string, nowMs: number, damage: number) => void;
+  /** Parked cars bots must walk around. */
+  readonly getCircles?: () => readonly CircleObstacle[];
 }
 
 interface BotAim {
@@ -41,8 +45,8 @@ export class TrainingBotController {
   readonly #aim = new Map<string, BotAim>();
   readonly #bots: readonly TrainingBot[];
   readonly #canEngage: (nowMs: number) => boolean;
+  readonly #getCircles: () => readonly CircleObstacle[];
   readonly #guns = new Map<string, Mesh>();
-  readonly #maximum: Vector3;
   readonly #minimum: Vector3;
   readonly #onAttack: (botId: string, nowMs: number, damage: number) => void;
   readonly #player: AbstractMesh;
@@ -58,7 +62,6 @@ export class TrainingBotController {
     bots: readonly TrainingBot[],
     player: AbstractMesh,
     minimum: Vector3,
-    maximum: Vector3,
     worldMeshes: readonly AbstractMesh[],
     options: TrainingBotControllerOptions
   ) {
@@ -67,10 +70,10 @@ export class TrainingBotController {
     this.#player = player;
     this.#previousPlayerPosition = player.position.clone();
     this.#minimum = minimum;
-    this.#maximum = maximum;
     this.#worldMeshes = new Set(worldMeshes);
     this.#canEngage = options.canEngage;
     this.#onAttack = options.onAttack;
+    this.#getCircles = options.getCircles ?? (() => []);
     this.#shotEffects = new ShotEffects(scene, "#ff6a5a", "bot");
 
     const gunMaterial = new StandardMaterial("bot-gun-material", scene);
@@ -168,16 +171,18 @@ export class TrainingBotController {
         const movement = direction.scale(
           BOT_SPEED_METERS_PER_SECOND * deltaSeconds
         );
-        movement.y = -9.81 * deltaSeconds;
-        bot.mesh.moveWithCollisions(movement);
-        bot.mesh.position.x = Math.min(
-          this.#maximum.x - 0.75,
-          Math.max(this.#minimum.x + 0.75, bot.mesh.position.x)
+        // Bots use the same collision code as players, so they too glide
+        // round buildings and parked cars instead of snagging on them.
+        const resolved = resolveMovement(
+          bot.mesh.position.x,
+          bot.mesh.position.z,
+          bot.mesh.position.x + movement.x,
+          bot.mesh.position.z + movement.z,
+          this.#getCircles()
         );
-        bot.mesh.position.z = Math.min(
-          this.#maximum.z - 0.75,
-          Math.max(this.#minimum.z + 0.75, bot.mesh.position.z)
-        );
+        bot.mesh.position.x = resolved.x;
+        bot.mesh.position.z = resolved.z;
+        bot.mesh.position.y = this.#minimum.y + 1.2;
       }
 
       this.#updateEngagement(

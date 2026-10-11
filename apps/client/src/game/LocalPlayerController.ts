@@ -5,42 +5,60 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { DEFAULT_GAME_CONFIG } from "@scooter-shooter/game-config";
+import {
+  VEHICLE_SPEED_MULTIPLIER,
+  getVehicleExit,
+  resolveMovement,
+  resolveVehicleMovement,
+  type CircleObstacle
+} from "@scooter-shooter/simulation";
 
 const VEHICLE_TURN_RATE_RADIANS_PER_SECOND = 3.4;
+/** Height of the capsule centre above the floor. */
+const CAPSULE_CENTER_HEIGHT = 1.2;
 
+export interface VehiclePose {
+  readonly x: number;
+  readonly z: number;
+  readonly yaw: number;
+}
+
+/**
+ * Moves the local player (on foot or in their car) with the same collision
+ * code the server runs. The walls, buildings and parked cars the player sees
+ * are therefore exactly the ones that stop them: there is no second, slightly
+ * different physics world to snag on, and online prediction agrees with the
+ * authoritative simulation.
+ */
 export class LocalPlayerController {
   readonly #camera: ArcRotateCamera;
+  readonly #getCircles: () => readonly CircleObstacle[];
   readonly #keys = new Set<string>();
-  readonly #maximum: Vector3;
   readonly #mesh: AbstractMesh;
-  readonly #minimum: Vector3;
   readonly #movementInput = Vector2.Zero();
   readonly #observer: Observer<Scene>;
   readonly #worldMoveDirection = Vector2.Zero();
-  #vehicle: AbstractMesh | undefined;
+  #vehicleYaw: number | undefined;
 
   constructor(
     scene: Scene,
     mesh: AbstractMesh,
     camera: ArcRotateCamera,
-    minimum: Vector3,
-    maximum: Vector3
+    getCircles: () => readonly CircleObstacle[] = () => []
   ) {
     this.#camera = camera;
-    this.#maximum = maximum;
     this.#mesh = mesh;
-    this.#minimum = minimum;
+    this.#getCircles = getCircles;
 
-    this.#mesh.checkCollisions = true;
-    this.#mesh.ellipsoid = new Vector3(0.5, 1.1, 0.5);
-    this.#mesh.ellipsoidOffset = Vector3.Zero();
+    // Collisions are resolved by the shared simulation, not by Babylon.
+    this.#mesh.checkCollisions = false;
 
     window.addEventListener("keydown", this.#onKeyDown);
     window.addEventListener("keyup", this.#onKeyUp);
     window.addEventListener("blur", this.#onBlur);
 
     this.#observer = scene.onBeforeRenderObservable.add(() => {
-      this.#update(scene.getEngine().getDeltaTime() / 1_000);
+      this.#update(Math.min(scene.getEngine().getDeltaTime() / 1_000, 0.25));
     });
   }
 
@@ -67,36 +85,41 @@ export class LocalPlayerController {
     return { x: this.#worldMoveDirection.x, z: this.#worldMoveDirection.y };
   }
 
-  enterVehicle(vehicle: AbstractMesh): void {
-    this.#vehicle = vehicle;
-    // The player collider rides inside the vehicle; leaving it collidable makes
-    // the vehicle push against it and refuse to move.
-    this.#mesh.checkCollisions = false;
+  isDriving(): boolean {
+    return this.#vehicleYaw !== undefined;
   }
 
-  exitVehicle(): void {
-    if (this.#vehicle === undefined) {
-      return;
+  /** Where the car being driven is, or undefined on foot. */
+  getVehiclePose(): VehiclePose | undefined {
+    return this.#vehicleYaw === undefined
+      ? undefined
+      : {
+          x: this.#mesh.position.x,
+          z: this.#mesh.position.z,
+          yaw: this.#vehicleYaw
+        };
+  }
+
+  /** Gets in: the player is carried at the car's position from now on. */
+  enterVehicle(car: VehiclePose): void {
+    this.#vehicleYaw = car.yaw;
+    this.#mesh.position.set(car.x, CAPSULE_CENTER_HEIGHT, car.z);
+  }
+
+  /** Gets out beside the car and returns where the car is left standing. */
+  exitVehicle(): VehiclePose | undefined {
+    if (this.#vehicleYaw === undefined) {
+      return undefined;
     }
-    const right = new Vector3(
-      Math.cos(this.#vehicle.rotation.y),
-      0,
-      -Math.sin(this.#vehicle.rotation.y)
-    );
-    this.#mesh.position.copyFrom(this.#vehicle.position.add(right.scale(2.2)));
-    this.#mesh.position.x = Scalar.Clamp(
-      this.#mesh.position.x,
-      this.#minimum.x,
-      this.#maximum.x
-    );
-    this.#mesh.position.z = Scalar.Clamp(
-      this.#mesh.position.z,
-      this.#minimum.z,
-      this.#maximum.z
-    );
-    this.#mesh.position.y = 1.2;
-    this.#mesh.checkCollisions = true;
-    this.#vehicle = undefined;
+    const car: VehiclePose = {
+      x: this.#mesh.position.x,
+      z: this.#mesh.position.z,
+      yaw: this.#vehicleYaw
+    };
+    this.#vehicleYaw = undefined;
+    const exit = getVehicleExit(car.x, car.z, car.yaw, this.#getCircles());
+    this.#mesh.position.set(exit.x, CAPSULE_CENTER_HEIGHT, exit.z);
+    return car;
   }
 
   getPosition(): Vector3 {
@@ -149,49 +172,45 @@ export class LocalPlayerController {
       .scale(input.y)
       .addInPlace(cameraRight.scale(input.x));
 
-    const controlledMesh = this.#vehicle ?? this.#mesh;
-    if (movement.lengthSquared() > 0) {
+    const hasMovement = movement.lengthSquared() > 0;
+    if (hasMovement) {
       movement.normalize();
       this.#worldMoveDirection.set(movement.x, movement.z);
-      if (this.#vehicle !== undefined) {
+      if (this.#vehicleYaw !== undefined) {
         const targetAngle = Math.atan2(movement.x, movement.z);
         const delta = Math.atan2(
-          Math.sin(targetAngle - controlledMesh.rotation.y),
-          Math.cos(targetAngle - controlledMesh.rotation.y)
+          Math.sin(targetAngle - this.#vehicleYaw),
+          Math.cos(targetAngle - this.#vehicleYaw)
         );
         const maximumTurn = VEHICLE_TURN_RATE_RADIANS_PER_SECOND * deltaSeconds;
-        controlledMesh.rotation.y += Scalar.Clamp(
-          delta,
-          -maximumTurn,
-          maximumTurn
-        );
+        this.#vehicleYaw += Scalar.Clamp(delta, -maximumTurn, maximumTurn);
       }
     } else {
       this.#worldMoveDirection.setAll(0);
     }
 
+    // The mesh position is the source of truth, so a respawn or a server
+    // correction applied from outside is picked up here.
+    const fromX = this.#mesh.position.x;
+    const fromZ = this.#mesh.position.z;
     const distance =
       DEFAULT_GAME_CONFIG.movement.speedMetersPerSecond *
-      (this.#vehicle === undefined ? 1 : 1.75) *
+      (this.#vehicleYaw === undefined ? 1 : VEHICLE_SPEED_MULTIPLIER) *
       deltaSeconds;
-    movement.scaleInPlace(distance);
-    movement.y = -9.81 * deltaSeconds;
-    controlledMesh.moveWithCollisions(movement);
+    const toX = fromX + (hasMovement ? movement.x * distance : 0);
+    const toZ = fromZ + (hasMovement ? movement.z * distance : 0);
 
-    controlledMesh.position.x = Scalar.Clamp(
-      controlledMesh.position.x,
-      this.#minimum.x,
-      this.#maximum.x
-    );
-    controlledMesh.position.z = Scalar.Clamp(
-      controlledMesh.position.z,
-      this.#minimum.z,
-      this.#maximum.z
-    );
-    if (this.#vehicle !== undefined) {
-      this.#mesh.position.x = controlledMesh.position.x;
-      this.#mesh.position.y = controlledMesh.position.y + 0.55;
-      this.#mesh.position.z = controlledMesh.position.z;
-    }
+    const resolved =
+      this.#vehicleYaw === undefined
+        ? resolveMovement(fromX, fromZ, toX, toZ, this.#getCircles())
+        : resolveVehicleMovement(
+            fromX,
+            fromZ,
+            toX,
+            toZ,
+            this.#vehicleYaw,
+            this.#getCircles()
+          );
+    this.#mesh.position.set(resolved.x, CAPSULE_CENTER_HEIGHT, resolved.z);
   }
 }

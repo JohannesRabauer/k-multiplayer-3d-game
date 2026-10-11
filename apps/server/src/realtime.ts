@@ -5,6 +5,7 @@ import {
   normalizeRoomCode,
   parseClientMessage,
   type ClientMessage,
+  type CarDesign,
   type ServerMessage,
   type Skin
 } from "@scooter-shooter/protocol";
@@ -43,6 +44,7 @@ interface Connection {
   readonly socket: WebSocket;
   identity: VerifiedIdentity | undefined;
   skin: Skin | undefined;
+  car: CarDesign | undefined;
   room: Room | undefined;
   player: RoomPlayer | undefined;
   lastSeenMs: number;
@@ -129,7 +131,7 @@ export function attachRealtimeGateway(
     if (message.type === "joinWithCode") {
       result = registry.joinByCode(
         normalizeRoomCode(message.roomCode),
-        withSkin(identity, connection.skin),
+        withLoadout(identity, connection),
         nowMs
       );
     } else if (message.type === "createRoom") {
@@ -137,11 +139,11 @@ export function attachRealtimeGateway(
       result =
         room === undefined
           ? ({ ok: false, reason: "server_full" } as const)
-          : registry.join(room, withSkin(identity, connection.skin), nowMs);
+          : registry.join(room, withLoadout(identity, connection), nowMs);
     } else {
       result = joinQuickPlay(
         registry,
-        withSkin(identity, connection.skin),
+        withLoadout(identity, connection),
         nowMs
       );
     }
@@ -261,6 +263,20 @@ export function attachRealtimeGateway(
         return;
       }
 
+      case "setCar": {
+        connection.car = message.car;
+        const { room, player } = connection;
+        if (room !== undefined && player !== undefined) {
+          player.car = message.car;
+          broadcast(room, {
+            type: "carChanged",
+            playerId: player.playerId,
+            car: message.car
+          });
+        }
+        return;
+      }
+
       case "inputBatch": {
         const player = connection.player;
         if (player === undefined) {
@@ -327,7 +343,8 @@ export function attachRealtimeGateway(
       room: undefined,
       player: undefined,
       lastSeenMs: now(),
-      skin: undefined
+      skin: undefined,
+      car: undefined
     };
     connections.add(connection);
 
@@ -426,11 +443,14 @@ export function attachRealtimeGateway(
   };
 }
 
-function withSkin(
+function withLoadout(
   identity: VerifiedIdentity,
-  skin: Skin | undefined
-): VerifiedIdentity & { readonly skin: Skin | undefined } {
-  return { ...identity, skin };
+  connection: Connection
+): VerifiedIdentity & {
+  readonly skin: Skin | undefined;
+  readonly car: CarDesign | undefined;
+} {
+  return { ...identity, skin: connection.skin, car: connection.car };
 }
 
 /** Fills the emptiest room that still has space, otherwise opens a new one. */
